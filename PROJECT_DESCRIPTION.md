@@ -1,6 +1,6 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 2.1
+**Document Version:** 2.2
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
 **System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
 
@@ -36,7 +36,7 @@ The **SwimEx EDGE** is a two-tier control platform for SwimEx swim-in-place (cou
 1. **EDGE Server** — A web application server running on a Linux or Windows edge device that hosts the main application, built-in MQTT broker, authentication engine, and all persistent data.
 2. **EDGE Client** — An Android application that runs in full kiosk mode, completely taking over the Android tablet, booting directly into the EDGE interface, and preventing exit without authorized credentials.
 
-The EDGE Server communicates with the pool's PLC (Programmable Logic Controller) over a **wired Ethernet** connection using MQTT, Modbus TCP, or HTTP. The EDGE Client (tablet) communicates with the EDGE Server over **Wi-Fi** (primary), with **Bluetooth as a planned future addon** for server-to-client communication. The client never communicates directly with the PLC — all control and telemetry flows through the server. The entire system operates within a closed, local network with no internet dependency.
+The EDGE Server communicates with the pool's PLC (Programmable Logic Controller) over a **wired Ethernet** connection using MQTT, Modbus TCP, or HTTP. The EDGE Client (tablet) communicates with the EDGE Server over **Wi-Fi** (primary). A fully implemented **Bluetooth** transport is also built into the system as an alternative client-to-server link, but it ships **disabled and hidden by default** — only a **Super Administrator** can enable and expose it. The client never communicates directly with the PLC — all control and telemetry flows through the server. The entire system operates within a closed, local network with no internet dependency.
 
 ### 1.1 Business Context
 
@@ -90,7 +90,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 │  └──────────┬───────────┘                                                        │
 │             │                                                                    │
 │             │ Wi-Fi (primary)                                                    │
-│             │ Bluetooth (future addon)                                           │
+│             │ Bluetooth (built-in, disabled by default — Super Admin activates)   │
 │             │ HTTP / WebSocket                                                   │
 │             │                                                                    │
 │  ┌──────────┴───────────┐        ┌──────────────────────┐                        │
@@ -136,7 +136,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 | Boot Behavior | Launches automatically on device boot; replaces the Android launcher |
 | Device Lockdown | Completely overrides Android OS — no access to home screen, settings, notifications, or other apps |
 | Exit Mechanism | Only users with **Administrator** or **Maintenance** role can exit kiosk mode |
-| Connectivity | Connects to EDGE Server over local Wi-Fi (primary); Bluetooth connectivity to server is a **planned future addon** |
+| Connectivity | Connects to EDGE Server over local Wi-Fi (primary); fully implemented Bluetooth transport is built-in but **disabled and hidden by default** (Super Admin must enable) |
 | Rendering | Embedded WebView loads the EDGE web application served by the EDGE Server |
 
 #### 2.2.3 PLC / Pool Controller
@@ -161,7 +161,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 
 ```
          Wi-Fi (primary)              Wired Ethernet
-         Bluetooth (future)           (permanent link)
+         Bluetooth (hidden/disabled)  (permanent link)
               │                            │
          ┌────┴────┐                  ┌────┴─────┐
          │ Android │    ┌──────────┐  │ PLC /    │
@@ -179,7 +179,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 **Connection architecture:**
 - **Server ↔ PLC: Wired Ethernet (always).** The EDGE Server connects to the PLC via a dedicated Ethernet cable. This link carries all MQTT, Modbus TCP, and HTTP traffic. It is the only path for PLC communication.
 - **Client ↔ Server: Wi-Fi (primary).** The Android kiosk client connects to the EDGE Server over the local Wi-Fi network. All user commands flow from client → server → PLC, and all PLC telemetry flows from PLC → server → client.
-- **Client ↔ Server: Bluetooth (future addon).** A planned enhancement will allow the tablet to connect to the EDGE Server via Bluetooth as an alternative to Wi-Fi, for scenarios where Wi-Fi is impractical. This will provide the same server-mediated path to the PLC.
+- **Client ↔ Server: Bluetooth (built-in, disabled by default).** A fully functional Bluetooth transport is implemented in the system, allowing the tablet to connect to the EDGE Server via Bluetooth as an alternative to Wi-Fi. It ships **disabled and hidden** from all users — only a **Super Administrator** can enable it through a hidden system settings panel. Once enabled, it provides the same server-mediated path to the PLC as Wi-Fi.
 - **Client ↔ PLC: Never direct.** The client has no direct communication path to the PLC. The EDGE Server is always the intermediary.
 
 ---
@@ -209,6 +209,7 @@ Kiosk mode can **only** be exited by a user authenticated with one of the follow
 
 | Role | Exit Capability |
 |---|---|
+| **Super Administrator** | Can exit kiosk mode, access Android OS, configure the device, and enable hidden features |
 | **Administrator** | Can exit kiosk mode, access Android OS, and configure the device |
 | **Maintenance** | Can exit kiosk mode for troubleshooting and system maintenance |
 | General User | **Cannot exit** — kiosk remains locked regardless of interaction |
@@ -241,7 +242,8 @@ All authentication is **server-managed**. The EDGE Server is the single source o
 
 | Role | Description | Permissions |
 |---|---|---|
-| **Administrator** | System owner / IT staff | Full access: all user features + admin panel + kiosk exit + UI builder + communication config + device registration + user management |
+| **Super Administrator** | SwimEx engineering / system integrator | Everything Administrator can do **plus**: enable/disable hidden features (Bluetooth), access Super Admin panel, manage feature flags, factory reset, firmware-level configuration. This role is **not visible** in the standard user management UI — it can only be created during initial server provisioning or via CLI/API |
+| **Administrator** | System owner / IT staff | Full access: all user features + admin panel + kiosk exit + UI builder + communication config + device registration + user management. Cannot see or toggle hidden features (e.g., Bluetooth) unless Super Admin has enabled them |
 | **Maintenance** | On-site technician | Kiosk exit + system diagnostics + communication config + UI builder access |
 | **User** | End-user (swimmer / patient) | Create account, manage own profile, run workouts, save programs, view usage history, toggle light/dark mode |
 | **Guest** (implicit) | Unauthenticated visitor | View-only access (web browser); on registered tablets, can use basic pool controls without profile persistence |
@@ -266,10 +268,11 @@ All authentication is **server-managed**. The EDGE Server is the single source o
 
 ### 4.4 Role Assignment
 
-- Administrator accounts are created during initial server setup (first-run wizard) or by existing Administrators.
-- Maintenance accounts are created and assigned by Administrators.
-- User accounts are self-service — anyone can register from the EDGE client login screen.
-- Role escalation (User → Maintenance, User → Administrator) can only be performed by an Administrator.
+- **Super Administrator** accounts are created exclusively during initial server provisioning (first-run wizard) or via CLI/API. They are not visible in the standard user management interface and cannot be created or modified by Administrators.
+- **Administrator** accounts are created during initial server setup (first-run wizard), by Super Administrators, or by existing Administrators.
+- **Maintenance** accounts are created and assigned by Administrators (or Super Administrators).
+- **User** accounts are self-service — anyone can register from the EDGE client login screen.
+- Role escalation (User → Maintenance, User → Administrator) can only be performed by an Administrator or Super Administrator. Escalation to Super Administrator is restricted to CLI/API or another Super Administrator.
 
 ---
 
@@ -334,16 +337,25 @@ The Administration Panel is a set of protected pages within the EDGE web applica
 | DHCP Range | Configure IP address allocation for connected devices |
 | Network Diagnostics | View connected clients, signal strength, and latency metrics |
 
-#### 6.2.2 Bluetooth Configuration (Future Addon)
+#### 6.2.2 Bluetooth Configuration (Super Administrator Only)
 
-> **Note:** Bluetooth support for server-to-client communication is a planned future feature. The configuration UI will be present but disabled until the Bluetooth module is implemented.
+> **Visibility:** The Bluetooth configuration section is **completely hidden** from all roles (including Administrator and Maintenance) by default. It is only visible and accessible when a **Super Administrator** explicitly enables the Bluetooth feature. Once enabled, standard Administrators can manage the settings below.
 
-| Setting | Description |
-|---|---|
-| Bluetooth Enable/Disable | Toggle Bluetooth communication between server and client |
-| Device Pairing | Pair server with Android tablet(s) over Bluetooth |
-| Preferred Connection | Set priority: Wi-Fi first with Bluetooth fallback, or Bluetooth-only |
-| Connection Status | Real-time view of Bluetooth link quality and paired devices |
+| Setting | Description | Default |
+|---|---|---|
+| Bluetooth Feature Enable/Disable | Master toggle for the entire Bluetooth subsystem (Super Admin only) | **Disabled** |
+| Bluetooth Visibility | Show/hide Bluetooth options from Administrator and Maintenance roles (Super Admin only) | **Hidden** |
+| Device Pairing | Pair server with Android tablet(s) over Bluetooth | — |
+| Preferred Connection | Set priority: Wi-Fi first with Bluetooth fallback, or Bluetooth-only | Wi-Fi only |
+| Connection Status | Real-time view of Bluetooth link quality and paired devices | — |
+| Bluetooth Power / Range | Configure Bluetooth radio power level | Default |
+
+**Activation flow:**
+1. Super Administrator logs in and navigates to the hidden Super Admin panel.
+2. Super Administrator toggles "Enable Bluetooth Feature" to ON.
+3. Bluetooth configuration section becomes visible in the standard Admin panel.
+4. Standard Administrators can now pair devices and configure Bluetooth preferences.
+5. Super Administrator can re-disable at any time, which hides the section again and falls back all connections to Wi-Fi.
 
 #### 6.2.3 Tablet MAC Address Registration
 
@@ -450,16 +462,18 @@ EDGE Client ── Wi-Fi ──► EDGE Server ══ Ethernet ══► PLC
 - All PLC telemetry flows: PLC → (Ethernet) → Server → (Wi-Fi) → Client.
 - The client is a thin presentation layer — it renders the UI and forwards user actions to the server via HTTP/WebSocket.
 
-#### 7.3.3 Client ↔ Server: Bluetooth (Future Addon)
+#### 7.3.3 Client ↔ Server: Bluetooth (Built-in, Disabled by Default)
 
 ```
 EDGE Client ── Bluetooth ──► EDGE Server ══ Ethernet ══► PLC
 ```
 
-- **Planned future enhancement** — not available in initial release.
-- Will provide an alternative wireless link between the tablet and the EDGE Server when Wi-Fi is impractical.
-- The data flow remains identical: all traffic still routes through the server to the PLC over Ethernet.
-- The client will never communicate directly with the PLC, even over Bluetooth.
+- **Fully implemented** but ships **disabled and hidden** from all roles.
+- A **Super Administrator** must explicitly enable the Bluetooth feature before it becomes available.
+- Once enabled, provides an alternative wireless link between the tablet and the EDGE Server when Wi-Fi is impractical or unreliable.
+- The data flow is identical to Wi-Fi: all traffic still routes through the server to the PLC over Ethernet.
+- The client never communicates directly with the PLC, even over Bluetooth.
+- If the Super Administrator disables Bluetooth again, all active Bluetooth connections gracefully fall back to Wi-Fi.
 
 ### 7.4 Keep-Alive & Safety Stop
 
@@ -782,7 +796,7 @@ User {
   passwordHash: String
   displayName:  String
   email:        String (nullable)
-  role:         Enum [ADMINISTRATOR, MAINTENANCE, USER]
+  role:         Enum [SUPER_ADMINISTRATOR, ADMINISTRATOR, MAINTENANCE, USER]
   profilePhoto: Binary (nullable)
   preferences:  UserPreferences
   isActive:     Boolean
@@ -946,7 +960,29 @@ WidgetPlacement {
 }
 ```
 
-### 12.8 State Machine — Workout Lifecycle
+### 12.8 Feature Flags Schema
+
+```
+FeatureFlag {
+  id:          UUID
+  featureKey:  String (unique)           // e.g., "BLUETOOTH_ENABLED"
+  displayName: String                    // e.g., "Bluetooth Client-Server Transport"
+  description: String
+  isEnabled:   Boolean (default: false)  // Master on/off
+  isVisible:   Boolean (default: false)  // Whether lower roles can see the feature's UI
+  enabledBy:   UUID (ref: User.id)       // Must be SUPER_ADMINISTRATOR
+  enabledAt:   DateTime (nullable)
+  updatedAt:   DateTime
+}
+```
+
+**Pre-configured feature flags (shipped with system):**
+
+| Feature Key | Display Name | Default Enabled | Default Visible |
+|---|---|---|---|
+| `BLUETOOTH_ENABLED` | Bluetooth Client-Server Transport | `false` | `false` |
+
+### 12.9 State Machine — Workout Lifecycle
 
 ```
                     ┌─────────────┐
@@ -1041,13 +1077,22 @@ Boot → Kiosk Auto-Launch → EDGE Home Screen
 │   ├── Dashboard (system health, connected devices, active sessions)
 │   ├── User Management (list, create, assign roles, disable, delete)
 │   ├── Device Registration (MAC address registry)
-│   ├── Network Config (Wi-Fi AP settings, Bluetooth pairing)
+│   ├── Network Config (Wi-Fi AP settings)
+│   ├── Bluetooth Config (only visible if Super Admin has enabled Bluetooth)
 │   ├── Communication Config (MQTT, Modbus TCP, HTTP)
 │   ├── Object-Tag Mapping (drag-and-drop tag assignment)
 │   ├── UI Builder (drag-and-drop layout editor)
 │   ├── Template Selector (5 built-in + custom)
 │   ├── System Settings (date/time, logging, backup/restore)
 │   └── Exit Kiosk Mode
+│
+├── [Super Administrator Views — Hidden from all other roles]
+│   ├── Feature Flags (enable/disable Bluetooth, future hidden features)
+│   ├── Bluetooth Master Toggle (enable/disable + show/hide for Admins)
+│   ├── Factory Reset
+│   ├── Firmware-Level Configuration
+│   ├── Super Admin Account Management (CLI/API only for creation)
+│   └── System Diagnostics (low-level logs, hardware info)
 │
 ├── [Maintenance Views]
 │   ├── Communication Config
@@ -1083,16 +1128,16 @@ All workout modes converge to a shared execution screen that:
 | PLC → Server | Ethernet | MQTT Publish / Modbus Read / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
 | Bidirectional | Ethernet | MQTT Keep-Alive | Heartbeat ping/ack for safety stop mechanism |
 
-### 14.2 EDGE Client ↔ EDGE Server (Wi-Fi; Bluetooth Future)
+### 14.2 EDGE Client ↔ EDGE Server (Wi-Fi Primary; Bluetooth When Enabled)
 
 | Direction | Transport | Data |
 |---|---|---|
-| Client → Server | Wi-Fi: HTTP REST / WebSocket | User commands, authentication requests, program CRUD |
-| Server → Client | Wi-Fi: WebSocket / Server-Sent Events | Real-time status updates, speed/time, PLC connection state |
-| Client → Server | Wi-Fi: HTTP | Workout session logging, usage tracking |
-| Bidirectional | Wi-Fi: WebSocket | Client ↔ Server keep-alive heartbeat |
+| Client → Server | Wi-Fi or Bluetooth: HTTP REST / WebSocket | User commands, authentication requests, program CRUD |
+| Server → Client | Wi-Fi or Bluetooth: WebSocket / Server-Sent Events | Real-time status updates, speed/time, PLC connection state |
+| Client → Server | Wi-Fi or Bluetooth: HTTP | Workout session logging, usage tracking |
+| Bidirectional | Wi-Fi or Bluetooth: WebSocket | Client ↔ Server keep-alive heartbeat |
 
-> **Future:** Bluetooth will provide an alternative transport for the same client ↔ server data flows listed above. The data model and API contracts remain identical — only the transport layer changes.
+> **Bluetooth note:** Bluetooth is fully implemented and provides an identical transport for all client ↔ server data flows. The data model and API contracts are the same regardless of transport. Bluetooth is disabled and hidden by default — a Super Administrator must enable it before it becomes available.
 
 ### 14.4 Physical Air Buttons ↔ PLC
 
@@ -1186,7 +1231,7 @@ volumes:
 |---|---|
 | Package | `.apk` installer (sideloaded or via MDM) |
 | Minimum Android | Android 8.0 (API 26) |
-| Permissions | Device Admin, Draw Over Apps, System Alert Window, Wi-Fi, Boot Completed (Bluetooth permission reserved for future addon) |
+| Permissions | Device Admin, Draw Over Apps, System Alert Window, Wi-Fi, Bluetooth, Boot Completed |
 | First-Run Config | Server URL/IP, Wi-Fi network selection |
 
 **Installation steps:**
@@ -1203,13 +1248,14 @@ volumes:
 Both server and client include a guided first-run configuration wizard:
 
 **Server Wizard:**
-1. Set admin credentials.
-2. Configure Ethernet interface for PLC connection (IP address, subnet, gateway).
-3. Configure Wi-Fi interface / AP settings for client-facing network.
-4. Configure MQTT broker settings (ports, TLS, credentials).
-5. Set PLC communication protocol and connection parameters (Modbus TCP address, MQTT topics, or HTTP endpoint).
-6. (Optional) Import existing configuration backup.
-7. (Optional) Register initial tablet MAC addresses.
+1. Create Super Administrator account (first-run only; this is the only time a Super Admin can be created via UI).
+2. Set Administrator credentials.
+3. Configure Ethernet interface for PLC connection (IP address, subnet, gateway).
+4. Configure Wi-Fi interface / AP settings for client-facing network.
+5. Configure MQTT broker settings (ports, TLS, credentials).
+6. Set PLC communication protocol and connection parameters (Modbus TCP address, MQTT topics, or HTTP endpoint).
+7. (Optional) Import existing configuration backup.
+8. (Optional) Register initial tablet MAC addresses.
 
 **Client Wizard:**
 1. Select Wi-Fi network and enter credentials.
@@ -1218,14 +1264,15 @@ Both server and client include a guided first-run configuration wizard:
 4. Confirm kiosk mode activation.
 5. Device reboots into kiosk mode.
 
-> **Future:** When Bluetooth support is added, the client wizard will include an optional Bluetooth pairing step as an alternative connection method to the server.
+> **Bluetooth:** If a Super Administrator has enabled Bluetooth on the server, the client wizard will additionally present a Bluetooth pairing step. If Bluetooth is disabled (default), this step is completely hidden from the wizard.
 
 ### 16.4 Web Browser Access
 
 | Scenario | Access Level |
 |---|---|
 | Any device on local network, no login | **View-only**: live pool status, current speed, active workout display |
-| Browser with Administrator login | **Full access**: all features including admin panel, user management, communication config |
+| Browser with Super Administrator login | **Full access + hidden features**: everything Administrator sees plus Super Admin panel, feature flags, Bluetooth toggle |
+| Browser with Administrator login | **Full access**: all features including admin panel, user management, communication config (Bluetooth settings visible only if Super Admin has enabled them) |
 | Browser with User login | **Read + limited write**: can view own profile and history but cannot control pool (control restricted to registered tablets) |
 
 ---
@@ -1238,10 +1285,13 @@ Both server and client include a guided first-run configuration wizard:
 | **EDGE Server** | The primary application server (Linux/Windows/Docker) hosting the web app, MQTT broker, auth engine, and database |
 | **EDGE Client** | The Android kiosk application that locks down the tablet and renders the EDGE UI |
 | **PLC** | Programmable Logic Controller — the embedded controller managing pool motor and physical I/O |
+| **Super Administrator** | Highest privilege role; can enable/disable hidden features (e.g., Bluetooth), perform factory reset, and access firmware-level config. Created only via provisioning or CLI/API |
 | **Kiosk Mode** | Android device lockdown mode that restricts the tablet to only the EDGE application |
+| **Bluetooth (Hidden Feature)** | Fully implemented alternative client-to-server transport; ships disabled and hidden by default; only a Super Administrator can enable and expose it |
+| **Feature Flag** | Server-side toggle controlling whether a hidden feature (e.g., Bluetooth) is enabled and visible to lower roles |
 | **Air Buttons** | Pneumatic buttons installed in the pool wall; waterproof physical controls |
 | **PoolCtrl** | Default Wi-Fi SSID for the local network connecting the EDGE Client (tablet) to the EDGE Server |
-| **Keep-Alive** | Periodic heartbeat on two segments: server ↔ PLC (Ethernet) and client ↔ server (Wi-Fi) to verify end-to-end connectivity |
+| **Keep-Alive** | Periodic heartbeat on two segments: server ↔ PLC (Ethernet) and client ↔ server (Wi-Fi or Bluetooth) to verify end-to-end connectivity |
 | **Safety Stop** | Automatic pool motor halt triggered when the keep-alive heartbeat is lost |
 | **MAC Registration** | Server-side registry of authorized tablet hardware addresses; controls write access |
 | **Object-Tag Mapping** | Binding between a UI widget and a PLC data point (register, topic, or endpoint) |
@@ -1267,3 +1317,4 @@ Both server and client include a guided first-run configuration wizard:
 | 1.0 | 2026-02-22 | System Design & Engineering | Initial project description derived from EDGE Operation Instructions v1 |
 | 2.0 | 2026-02-22 | System Design & Engineering | Major expansion: two-tier architecture (server + kiosk client), authentication & RBAC, kiosk mode, admin panel, MQTT broker, multi-protocol PLC communication, keep-alive safety stop, drag-and-drop UI builder, 5 templates, light/dark mode, MAC registration, user profiles & usage tracking, Docker deployment, installer packages, web browser access |
 | 2.1 | 2026-02-22 | System Design & Engineering | Connectivity model correction: Server ↔ PLC is wired Ethernet only (not wireless); Client ↔ Server is Wi-Fi primary with Bluetooth as future addon; client never communicates directly with PLC; two-segment keep-alive (Ethernet + Wi-Fi); updated architecture diagrams, connection paths, integration points, deployment wizards, and glossary |
+| 2.2 | 2026-02-22 | System Design & Engineering | Bluetooth reclassified: fully implemented but disabled and hidden by default (not a future feature). New Super Administrator role introduced as the only role that can enable/expose Bluetooth. Added feature flags system, Super Admin panel in UI flow, FeatureFlag data model, updated RBAC to 5 tiers, and updated all Bluetooth references throughout |
