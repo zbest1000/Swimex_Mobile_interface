@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SwimEx EDGE</string>
+    <string name="default_server_url">http://192.168.1.1:3000</string>
+    <string name="no_server_url">No server URL configured</string>
+    <string name="exit_requires_auth">Exit requires Admin or Maintenance authentication</string>
+    <string name="pref_key_server_url">server_url</string>
+</resources>
