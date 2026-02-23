@@ -1,23 +1,52 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 1.0
+**Document Version:** 2.0
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
-**System Type:** Embedded Touch-Screen Pool Control Interface
+**System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
+
+---
+
+## Table of Contents
+
+1. [Project Overview](#1-project-overview)
+2. [System Architecture](#2-system-architecture)
+3. [Kiosk Mode & Device Lockdown](#3-kiosk-mode--device-lockdown)
+4. [Authentication & Role-Based Access Control](#4-authentication--role-based-access-control)
+5. [User Accounts, Profiles & Usage Tracking](#5-user-accounts-profiles--usage-tracking)
+6. [Administration Panel](#6-administration-panel)
+7. [Communication Layer](#7-communication-layer)
+8. [UI Builder & Theming](#8-ui-builder--theming)
+9. [Workout Modes (Functional Requirements)](#9-workout-modes-functional-requirements)
+10. [Navigation & UI Conventions](#10-navigation--ui-conventions)
+11. [Non-Functional Requirements](#11-non-functional-requirements)
+12. [Data Model](#12-data-model)
+13. [User Interface Flow](#13-user-interface-flow)
+14. [Integration Points](#14-integration-points)
+15. [Security Considerations](#15-security-considerations)
+16. [Deployment, Packaging & Installation](#16-deployment-packaging--installation)
+17. [Glossary](#17-glossary)
+18. [Revision History](#18-revision-history)
 
 ---
 
 ## 1. Project Overview
 
-The **SwimEx EDGE** is a tablet-based touch-screen control system designed to operate SwimEx swim-in-place (counter-current) pools. It serves as the primary user interface for programming, monitoring, and executing swim workouts by communicating wirelessly with the pool's motor controller. The system replaces or supplements physical in-pool air buttons with a rich graphical interface, providing real-time feedback on speed, time, distance, and workout progression.
+The **SwimEx EDGE** is a two-tier control platform for SwimEx swim-in-place (counter-current) pools. It consists of:
+
+1. **EDGE Server** — A web application server running on a Linux or Windows edge device that hosts the main application, built-in MQTT broker, authentication engine, and all persistent data.
+2. **EDGE Client** — An Android application that runs in full kiosk mode, completely taking over the Android tablet, booting directly into the EDGE interface, and preventing exit without authorized credentials.
+
+The system communicates with the pool's PLC (Programmable Logic Controller) over Wi-Fi or Bluetooth using MQTT, Modbus TCP, or HTTP. It provides real-time control of pool speed, workout programming, user profile management, and administrative configuration — all within a closed, local network with no internet dependency.
 
 ### 1.1 Business Context
 
-SwimEx manufactures aquatic therapy and fitness pools that generate an adjustable water current for stationary swimming. The EDGE tablet elevates the user experience by:
+SwimEx manufactures aquatic therapy and fitness pools that generate an adjustable water current for stationary swimming. The EDGE platform elevates the user experience by:
 
-- Offering a visual, programmable interface beyond basic physical buttons.
-- Enabling custom and preset workout programs with save/load capability.
-- Providing a library system for workout management and recall.
-- Supporting multiple user skill levels (Beginner, Intermediate, Advanced).
+- Replacing legacy single-purpose controllers with a rich, programmable touch interface.
+- Offering user accounts with profile persistence and workout history tracking.
+- Providing administrator-level system configuration (networking, device registration, communication mapping).
+- Supporting drag-and-drop UI customization with 5 built-in templates.
+- Enabling multi-protocol PLC communication (MQTT, Modbus TCP, HTTP) with automatic safety stop on disconnect.
 
 ### 1.2 Key Stakeholders
 
@@ -25,8 +54,10 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 |---|---|
 | End Users | Pool swimmers, aquatic therapy patients, fitness professionals |
 | Facility Operators | Gyms, rehab clinics, private pool owners |
-| SwimEx Engineering | Hardware and firmware teams maintaining pool controllers |
-| SwimEx Software Team | Developers maintaining the EDGE application |
+| Maintenance Personnel | On-site technicians responsible for system configuration and upkeep |
+| Administrators | System owners who manage device registration, networking, user roles, and communication |
+| SwimEx Engineering | Hardware/firmware teams maintaining pool PLCs and controllers |
+| SwimEx Software Team | Developers maintaining the EDGE server and client applications |
 
 ---
 
@@ -35,64 +66,468 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 ### 2.1 High-Level Architecture
 
 ```
-┌─────────────────────┐       Wi-Fi (PoolCtrl)       ┌──────────────────────┐
-│   EDGE Tablet       │◄────────────────────────────►│   Pool Controller    │
-│  (Android Tablet)   │     System-Generated AP       │   (Embedded MCU)     │
-│                     │                               │                      │
-│  ┌───────────────┐  │                               │  ┌────────────────┐  │
-│  │ EDGE Web App  │  │                               │  │ Motor Driver   │  │
-│  │ (Browser-     │  │   Commands: Start/Stop/       │  │                │  │
-│  │  based UI)    │──┼── Speed/Time/Program ────────►│  │ Current Gen    │  │
-│  │               │  │                               │  │                │  │
-│  │               │◄─┼── Status: Speed/Time/ ◄──────│  │ Sensor Array   │  │
-│  │               │  │   State Feedback              │  └────────────────┘  │
-│  └───────────────┘  │                               │                      │
-│                     │                               │  ┌────────────────┐  │
-│  ┌───────────────┐  │                               │  │ Air Buttons    │  │
-│  │ Android OS    │  │                               │  │ (Physical I/O) │  │
-│  └───────────────┘  │                               │  └────────────────┘  │
-└─────────────────────┘                               └──────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          LOCAL NETWORK (No Internet)                         │
+│                                                                             │
+│  ┌──────────────────────┐    Wi-Fi / Bluetooth    ┌──────────────────────┐  │
+│  │  EDGE SERVER         │◄───────────────────────►│  PLC / Pool          │  │
+│  │  (Linux or Windows)  │   MQTT / Modbus TCP /   │  Controller          │  │
+│  │                      │   HTTP                   │                      │  │
+│  │  ┌────────────────┐  │                          │  ┌────────────────┐  │  │
+│  │  │ Web App Server │  │    Keep-Alive Heartbeat  │  │ Motor Driver   │  │  │
+│  │  │ (Serves UI)    │──┼─────────────────────────►│  │ Current Gen    │  │  │
+│  │  ├────────────────┤  │                          │  │ Sensor Array   │  │  │
+│  │  │ MQTT Broker    │  │◄── Status / Telemetry ──│  └────────────────┘  │  │
+│  │  │ (Built-in)     │  │                          │                      │  │
+│  │  ├────────────────┤  │                          │  ┌────────────────┐  │  │
+│  │  │ Auth Engine    │  │                          │  │ Air Buttons    │  │  │
+│  │  │ (All accounts) │  │                          │  │ (Physical I/O) │  │  │
+│  │  ├────────────────┤  │                          │  └────────────────┘  │  │
+│  │  │ Database       │  │                          └──────────────────────┘  │
+│  │  │ (Users, Progs) │  │                                                   │
+│  │  └────────────────┘  │                                                   │
+│  └──────────┬───────────┘                                                   │
+│             │ HTTP/WebSocket                                                │
+│             │ (Serves Web App)                                              │
+│             │                                                               │
+│  ┌──────────┴───────────┐        ┌──────────────────────┐                   │
+│  │  EDGE CLIENT         │        │  WEB BROWSER          │                  │
+│  │  (Android Kiosk App) │        │  (Any Device)         │                  │
+│  │                      │        │                       │                  │
+│  │  ┌────────────────┐  │        │  ┌─────────────────┐  │                  │
+│  │  │ Kiosk Shell    │  │        │  │ View-Only Mode  │  │                  │
+│  │  │ (Full Device   │  │        │  │ (Read access)   │  │                  │
+│  │  │  Lockdown)     │  │        │  │                 │  │                  │
+│  │  ├────────────────┤  │        │  │ Full Access     │  │                  │
+│  │  │ Embedded       │  │        │  │ (Admin login    │  │                  │
+│  │  │ WebView        │  │        │  │  required)      │  │                  │
+│  │  │ (Renders UI)   │  │        │  └─────────────────┘  │                  │
+│  │  └────────────────┘  │        └──────────────────────┘                   │
+│  └──────────────────────┘                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 Component Breakdown
 
-#### 2.2.1 EDGE Tablet (Client)
-
-- **Platform:** Android tablet (Samsung-based, with physical Home button).
-- **Application Type:** Browser-based web application launched via the Android INTERNET (browser) app.
-- **Display:** Touch-screen interface with tap, numeric keypad input, and button interactions.
-- **Connectivity:** Connects to the pool controller's dedicated Wi-Fi access point (`PoolCtrl` SSID).
-
-#### 2.2.2 Pool Controller (Server)
-
-- **Role:** Embedded controller that manages pool motor speed, current generation, and physical button I/O.
-- **Communication:** Hosts a local Wi-Fi access point (`PoolCtrl`) and serves the EDGE web application.
-- **Physical Interface:** In-pool air buttons (`START`, `STOP`, `SLOW`, `FAST`) that operate independently or in tandem with the tablet.
-
-### 2.3 Communication Protocol
+#### 2.2.1 EDGE Server (Primary)
 
 | Aspect | Detail |
 |---|---|
-| Transport | Wi-Fi (802.11), system-generated local AP |
-| Network SSID | `PoolCtrl` |
-| Topology | Direct tablet-to-controller (no internet required) |
-| Application Layer | HTTP/WebSocket (browser-based app served by controller) |
-| Latency Requirement | Near-real-time for speed adjustments and start/stop commands |
+| Host OS | Linux (preferred) or Windows |
+| Deployment | Native install via installer package, or Docker container |
+| Role | Hosts all application logic, authentication, MQTT broker, database, and serves the web UI |
+| Web Server | Serves the EDGE web application to both the kiosk client and external browsers |
+| MQTT Broker | Built-in broker for real-time PLC communication |
+| Auth Engine | Manages all user accounts, roles, sessions, and MAC address registration |
+| Database | Stores user profiles, workout programs, session history, device registrations, communication configs |
 
-### 2.4 Critical Configuration Constraints
+#### 2.2.2 EDGE Client (Android Kiosk Application)
 
-- **Manual Date/Time:** The tablet's date and time must be set manually. Automatic date/time and automatic time zone must be **disabled**. This implies the controller uses timestamp validation or certificate pinning that breaks with NTP-synced time, or the system operates fully offline and relies on local clock consistency.
-- **No Internet:** The tablet connects exclusively to the `PoolCtrl` network, which is a local-only AP with no upstream internet.
+| Aspect | Detail |
+|---|---|
+| Platform | Android tablet (Samsung-based or compatible) |
+| App Type | Native Android app with embedded WebView, built on an open-source kiosk mode framework |
+| Boot Behavior | Launches automatically on device boot; replaces the Android launcher |
+| Device Lockdown | Completely overrides Android OS — no access to home screen, settings, notifications, or other apps |
+| Exit Mechanism | Only users with **Administrator** or **Maintenance** role can exit kiosk mode |
+| Connectivity | Connects to EDGE Server over local Wi-Fi; also supports Bluetooth for PLC communication |
+| Rendering | Embedded WebView loads the EDGE web application served by the EDGE Server |
+
+#### 2.2.3 PLC / Pool Controller
+
+| Aspect | Detail |
+|---|---|
+| Role | Controls pool motor speed, current generation, and reads physical button inputs |
+| Communication | Receives commands and sends telemetry via MQTT, Modbus TCP, or HTTP |
+| Physical Interface | In-pool air buttons (START, STOP, SLOW, FAST) operate independently of the tablet |
+| Keep-Alive | Maintains heartbeat with the EDGE Server; triggers safety STOP if connection is lost |
+
+#### 2.2.4 Web Browser Access (Optional)
+
+| Aspect | Detail |
+|---|---|
+| Access | Any device on the local network can open the EDGE UI in a standard web browser |
+| Default Mode | **View-only** — users can observe workout status and pool state but cannot issue commands |
+| Admin Override | Users logged in with an **Administrator** account gain full read/write control via browser |
+| Authentication | All credentials validated by the EDGE Server auth engine |
+
+### 2.3 Communication Topology
+
+```
+                    ┌─────────────┐
+                    │  EDGE       │
+                    │  Server     │
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+         ┌────┴────┐  ┌───┴────┐  ┌────┴─────┐
+         │ Android │  │ Web    │  │ PLC /    │
+         │ Kiosk   │  │ Browser│  │ Controller│
+         │ Client  │  │ (View) │  │          │
+         └─────────┘  └────────┘  └──────────┘
+              │                        ▲
+              │    Direct Bluetooth     │
+              └────────────────────────┘
+```
+
+**Connection paths to PLC:**
+1. **Server-mediated (primary):** Client → Server → PLC (via Wi-Fi network, MQTT/Modbus TCP/HTTP).
+2. **Direct Bluetooth:** Client → PLC (Bluetooth, for scenarios where both are in close proximity).
 
 ---
 
-## 3. Functional Requirements
+## 3. Kiosk Mode & Device Lockdown
 
-### 3.1 Workout Modes
+### 3.1 Overview
+
+The EDGE Client is a purpose-built Android application based on an existing open-source kiosk mode project. It transforms a standard Android tablet into a dedicated, single-purpose pool control terminal.
+
+### 3.2 Kiosk Behavior
+
+| Behavior | Description |
+|---|---|
+| Auto-Launch on Boot | The EDGE Client is registered as the device's default launcher; it starts automatically when the tablet powers on |
+| Full Screen | The app runs in immersive full-screen mode — no status bar, navigation bar, or notification shade |
+| Home Button Override | Pressing the Android Home button has no effect or returns to the EDGE home screen |
+| Back Button Override | The Android Back button is intercepted; navigation is controlled entirely within the EDGE UI |
+| Recent Apps Blocked | The multitasking/recent apps button is disabled |
+| Settings Blocked | Access to Android Settings is prevented from within the kiosk |
+| USB/Peripheral Lock | Optional: prevent unauthorized USB device connections |
+| Screen Pinning | Uses Android's screen pinning / lock task mode APIs for OS-level enforcement |
+
+### 3.3 Exiting Kiosk Mode
+
+Kiosk mode can **only** be exited by a user authenticated with one of the following roles:
+
+| Role | Exit Capability |
+|---|---|
+| **Administrator** | Can exit kiosk mode, access Android OS, and configure the device |
+| **Maintenance** | Can exit kiosk mode for troubleshooting and system maintenance |
+| General User | **Cannot exit** — kiosk remains locked regardless of interaction |
+
+**Exit Flow:**
+1. User navigates to the EDGE settings/admin area within the app.
+2. User authenticates with Administrator or Maintenance credentials (validated against the EDGE Server).
+3. Upon successful authentication, the app presents an "Exit Kiosk" option.
+4. Confirming exit un-pins the screen and restores normal Android launcher behavior.
+5. Re-entering the EDGE app or rebooting the device re-engages kiosk mode.
+
+### 3.4 Open-Source Kiosk Foundation
+
+The kiosk shell is built on top of an established open-source Android kiosk/lockdown project, extended with:
+
+- Integration with the EDGE Server's authentication API for role-based exit control.
+- Embedded WebView configuration optimized for the EDGE web application.
+- Automatic reconnection logic when the server or network is temporarily unavailable.
+- Customizable branding (splash screen, loading indicators) for SwimEx.
+
+---
+
+## 4. Authentication & Role-Based Access Control
+
+### 4.1 Overview
+
+All authentication is **server-managed**. The EDGE Server is the single source of truth for user credentials, roles, and sessions. Neither the Android client nor the web browser stores or validates credentials locally.
+
+### 4.2 Roles
+
+| Role | Description | Permissions |
+|---|---|---|
+| **Administrator** | System owner / IT staff | Full access: all user features + admin panel + kiosk exit + UI builder + communication config + device registration + user management |
+| **Maintenance** | On-site technician | Kiosk exit + system diagnostics + communication config + UI builder access |
+| **User** | End-user (swimmer / patient) | Create account, manage own profile, run workouts, save programs, view usage history, toggle light/dark mode |
+| **Guest** (implicit) | Unauthenticated visitor | View-only access (web browser); on registered tablets, can use basic pool controls without profile persistence |
+
+### 4.3 Authentication Flow
+
+```
+┌────────────┐     Credentials      ┌──────────────┐     Validate      ┌──────────────┐
+│ Client     │ ────────────────────► │ EDGE Server  │ ────────────────► │ Auth Engine   │
+│ (Kiosk or  │                       │ (API)        │                   │ (DB Lookup)   │
+│  Browser)  │ ◄──────────────────── │              │ ◄──────────────── │              │
+│            │     Session Token     │              │     Role + Token  │              │
+└────────────┘                       └──────────────┘                   └──────────────┘
+```
+
+**Key behaviors:**
+- Login returns a session token with embedded role claims.
+- The client includes the token in all subsequent API requests.
+- Token expiry and refresh are managed server-side.
+- Failed authentication on kiosk does not reveal role-specific UI — the interface adapts based on the authenticated role.
+- Web browser access without login defaults to view-only mode.
+
+### 4.4 Role Assignment
+
+- Administrator accounts are created during initial server setup (first-run wizard) or by existing Administrators.
+- Maintenance accounts are created and assigned by Administrators.
+- User accounts are self-service — anyone can register from the EDGE client login screen.
+- Role escalation (User → Maintenance, User → Administrator) can only be performed by an Administrator.
+
+---
+
+## 5. User Accounts, Profiles & Usage Tracking
+
+### 5.1 Account Creation
+
+Any user can create an account directly from the EDGE client or via the web interface (if permitted by admin settings). Registration captures:
+
+| Field | Required | Description |
+|---|---|---|
+| Username | Yes | Unique identifier |
+| Password | Yes | Server-stored (hashed) |
+| Display Name | Yes | Shown in UI and workout logs |
+| Email | Optional | For account recovery (if network permits) |
+| Profile Photo | Optional | Avatar shown on login and workout screens |
+
+### 5.2 User Profile
+
+Each user profile stores:
+
+| Data | Description |
+|---|---|
+| Saved Workout Programs | Custom and interval programs created by the user |
+| Workout History | Timestamped log of every session (duration, speed, mode, steps completed) |
+| Usage Statistics | Total swim time, session count, average speed, favorite workout mode |
+| Preferences | Light/dark mode, default speed, preferred template |
+| Fitness Level | Self-reported (Beginner/Intermediate/Advanced) for preset recommendations |
+
+### 5.3 Usage Tracking
+
+The system automatically records:
+
+| Metric | Granularity |
+|---|---|
+| Session Start/End Time | Per workout |
+| Workout Mode Used | Per session |
+| Speed Over Time | Sampled at regular intervals during workout |
+| Steps/Sets Completed | Per session |
+| Total Accumulated Swim Time | Lifetime per user |
+| Calories (estimated) | Per session (if enabled) |
+
+Usage data is stored on the EDGE Server and associated with the authenticated user. Guest sessions (no login) are tracked anonymously.
+
+---
+
+## 6. Administration Panel
+
+### 6.1 Overview
+
+The Administration Panel is a set of protected pages within the EDGE web application, visible **only** to users with the **Administrator** role. These pages provide full system configuration capabilities.
+
+### 6.2 Admin Features
+
+#### 6.2.1 Network Configuration — Wi-Fi Access Point
+
+| Setting | Description |
+|---|---|
+| AP SSID | Configure or change the Wi-Fi access point name (e.g., `PoolCtrl`) |
+| AP Password | Set or rotate the Wi-Fi password |
+| AP Channel | Select Wi-Fi channel to avoid interference |
+| DHCP Range | Configure IP address allocation for connected devices |
+| Network Diagnostics | View connected clients, signal strength, and latency metrics |
+
+#### 6.2.2 Bluetooth Configuration
+
+| Setting | Description |
+|---|---|
+| Bluetooth Enable/Disable | Toggle Bluetooth communication on the server or client |
+| Device Pairing | Pair with PLC/controller Bluetooth modules |
+| Preferred Connection | Set priority: Wi-Fi first with Bluetooth fallback, or Bluetooth-only |
+| Connection Status | Real-time view of Bluetooth link quality and connected devices |
+
+#### 6.2.3 Tablet MAC Address Registration
+
+The EDGE Server maintains a registry of authorized tablet MAC addresses. This is a critical access control mechanism:
+
+| MAC Status | Behavior |
+|---|---|
+| **Registered** | Full read/write access — user can control the pool, run workouts, save programs |
+| **Unregistered** | **View-only** — user can see the UI and pool status but **cannot issue any write commands** (start, stop, speed changes, program saves) |
+
+**Admin actions:**
+- View all known MAC addresses and their registration status.
+- Register a new MAC address (manually or from a list of recently seen devices).
+- Revoke registration (demotes the device to view-only).
+- Bulk import/export of MAC registrations.
+
+#### 6.2.4 User Management
+
+| Action | Description |
+|---|---|
+| View All Users | List all registered accounts with role, last login, and usage summary |
+| Assign Roles | Promote or demote users between User, Maintenance, and Administrator roles |
+| Disable/Enable Account | Temporarily lock a user account without deleting it |
+| Delete Account | Permanently remove a user and optionally their associated data |
+| Reset Password | Force a password reset for any user |
+
+#### 6.2.5 Object-to-Tag Mapping
+
+Administrators can map application objects (UI elements, data points, control actions) to PLC tags:
+
+| Concept | Description |
+|---|---|
+| **Object** | A logical entity in the EDGE UI (e.g., "Speed Slider", "Start Button", "Temperature Display") |
+| **Tag** | A PLC register or data point address (e.g., Modbus register `40001`, MQTT topic `pool/speed/setpoint`) |
+| **Mapping** | Binds an object to a tag so that UI interactions read from or write to the correct PLC address |
+
+**Mapping interface:**
+- Drag-and-drop assignment of objects to tags.
+- Tag browser showing all discovered/configured PLC tags.
+- Validation of data types (integer, float, boolean, string) between object and tag.
+- Import/export of tag maps for backup and replication across installations.
+
+#### 6.2.6 Communication Configuration
+
+Administrators configure how the EDGE Server communicates with the PLC:
+
+| Protocol | Configuration |
+|---|---|
+| **MQTT** | Broker address (defaults to built-in), port, QoS level, topic prefix, TLS enable/disable, client ID, credentials |
+| **Modbus TCP** | PLC IP address, port (default 502), unit ID, register map, polling interval, timeout |
+| **HTTP** | PLC REST API endpoint, authentication (API key / basic auth), request format (JSON/XML), polling interval |
+
+Multiple protocols can be active simultaneously for redundancy or for communicating with different subsystems.
+
+---
+
+## 7. Communication Layer
+
+### 7.1 Built-in MQTT Broker
+
+The EDGE Server includes an **embedded MQTT broker** as the primary communication backbone between the application and the PLC.
+
+| Aspect | Detail |
+|---|---|
+| Protocol | MQTT v3.1.1 / v5.0 |
+| Default Port | 1883 (plaintext), 8883 (TLS) |
+| Hosting | Runs as an integrated service within the EDGE Server process |
+| Clients | EDGE Server (internal), PLC controller, Android kiosk client (for direct status subscriptions) |
+| Topics | Hierarchical: `swimex/{pool_id}/command/*`, `swimex/{pool_id}/status/*`, `swimex/{pool_id}/keepalive` |
+| QoS | Configurable per topic; QoS 1 (at-least-once) recommended for commands; QoS 0 for telemetry |
+| Retained Messages | Used for current-state topics (speed, mode) so new subscribers get immediate state |
+
+### 7.2 Supported Communication Protocols
+
+| Protocol | Direction | Use Case |
+|---|---|---|
+| **MQTT** | Bidirectional | Primary real-time communication: commands to PLC, status/telemetry from PLC |
+| **Modbus TCP** | Bidirectional | Direct register read/write for PLCs that support Modbus; used for legacy controllers |
+| **HTTP** | Bidirectional | REST-style API calls for PLCs with HTTP interfaces; also used for server-to-server integration |
+
+### 7.3 Connection Paths
+
+#### 7.3.1 Wi-Fi Communication
+
+```
+EDGE Client ──Wi-Fi──► EDGE Server ──Wi-Fi──► PLC
+                        (MQTT Broker)
+```
+
+- Primary communication path.
+- All data flows through the EDGE Server's MQTT broker.
+- The server translates between MQTT topics and whatever protocol the PLC uses (Modbus TCP, HTTP, or native MQTT).
+
+#### 7.3.2 Bluetooth Communication
+
+```
+EDGE Client ──Bluetooth──► PLC (Direct)
+```
+
+- Secondary/fallback path for close-proximity control.
+- Used when Wi-Fi is unavailable or for installations where Bluetooth is preferred.
+- The Android kiosk client communicates directly with the PLC's Bluetooth module.
+
+### 7.4 Keep-Alive & Safety Stop
+
+A heartbeat mechanism ensures continuous, verified connectivity between the EDGE system and the PLC.
+
+**Keep-Alive Protocol:**
+
+```
+┌──────────┐    Heartbeat (every N seconds)    ┌──────────┐
+│  EDGE    │ ──────────────────────────────────►│  PLC     │
+│  Server  │                                    │          │
+│  or      │ ◄──────────────────────────────── │          │
+│  Client  │    Heartbeat ACK                   │          │
+└──────────┘                                    └──────────┘
+```
+
+| Parameter | Detail |
+|---|---|
+| Heartbeat Interval | Configurable (default: 1–5 seconds) |
+| Missed Heartbeats Threshold | Configurable (default: 3 consecutive misses) |
+| Timeout Action | PLC enters **SAFETY STOP** mode — pool motor halts immediately |
+| Recovery | When heartbeat resumes, PLC remains in STOP until an explicit START command is issued |
+
+**Triggers for Safety Stop:**
+- Wi-Fi disconnection between server and PLC.
+- Bluetooth disconnection between client and PLC.
+- EDGE Server process crash or shutdown.
+- Tablet moves out of Wi-Fi/Bluetooth range.
+- Network congestion causing heartbeat timeouts.
+
+**Safety Stop Behavior:**
+1. PLC halts the pool motor immediately upon heartbeat timeout.
+2. PLC logs the disconnect event with timestamp.
+3. When connectivity is restored, the EDGE UI shows a "Connection Restored — Press START to Resume" prompt.
+4. The pool does **not** auto-resume — explicit operator action is required.
+
+---
+
+## 8. UI Builder & Theming
+
+### 8.1 Drag-and-Drop UI Builder
+
+Available to **Administrator** and **Maintenance** roles, the UI builder allows visual customization of the EDGE interface.
+
+| Feature | Description |
+|---|---|
+| Object Palette | Library of draggable UI widgets: buttons, sliders, gauges, numeric displays, timers, charts, labels, images |
+| Canvas | WYSIWYG editor representing the tablet screen; objects are placed by drag-and-drop |
+| Property Inspector | Configure each object's properties: size, color, label, tag binding, behavior, animation |
+| Tag Binding | Each object can be bound to a PLC tag (configured via the admin object-to-tag mapping) |
+| Layout Grid | Snap-to-grid alignment for consistent layouts |
+| Responsive Preview | Preview how the layout renders on different screen sizes |
+| Undo/Redo | Full undo/redo stack for editing sessions |
+| Save/Publish | Save drafts; publish to make the layout live for all users |
+
+### 8.2 Pre-Built Templates
+
+Five professionally designed templates ship with the application, each with a distinct visual style:
+
+| Template | Visual Style | Best For |
+|---|---|---|
+| **Classic** | Clean, traditional layout matching the original EDGE look | Existing SwimEx installations upgrading to the new system |
+| **Modern** | Flat design with bold colors and large touch targets | General fitness and therapy facilities |
+| **Clinical** | High-contrast, accessibility-focused with large fonts | Medical/rehab environments with older or visually impaired users |
+| **Sport** | Dynamic, energetic design with performance-oriented gauges | Competitive swim training facilities |
+| **Minimal** | Stripped-down interface showing only essential controls | Environments prioritizing simplicity |
+
+**Template behavior:**
+- General users see the template selected by the Administrator.
+- Administrators select the active template from the admin panel.
+- Templates can be further customized via the drag-and-drop builder after selection.
+- Switching templates preserves all tag bindings and functional configuration.
+
+### 8.3 Light & Dark Mode
+
+| Aspect | Detail |
+|---|---|
+| Availability | All users (including general/guest) |
+| Toggle Location | Accessible from the main UI header or user profile settings |
+| Persistence | Preference saved per user account; guests get the system default |
+| Scope | Affects all screens — workout, library, settings, execution |
+| Implementation | CSS custom properties / theme tokens; all 5 templates support both modes |
+| Default | Configurable by Administrator (system-wide default for new users/guests) |
+
+---
+
+## 9. Workout Modes (Functional Requirements)
 
 The EDGE application supports five distinct workout modes:
 
-#### 3.1.1 Quick Start / Timed Workout
+### 9.1 Quick Start / Timed Workout
 
 **Purpose:** Immediate pool operation with optional time and speed targets.
 
@@ -118,7 +553,7 @@ The EDGE application supports five distinct workout modes:
 4. Workout ends via PAUSE, END (tablet), or STOP (in-pool button).
 5. Screen resets to default settings on stop.
 
-#### 3.1.2 Custom Programs
+### 9.2 Custom Programs
 
 **Purpose:** Multi-step programmable workouts with save/load/library functionality.
 
@@ -143,8 +578,8 @@ Custom Program
 | Set Repetition | Configurable number of set repeats |
 | Time Range | Up to 480 minutes per step |
 | Speed | Percentage-based per step |
-| Save | Persist program with user-defined name |
-| Save As | Clone existing program under new name for editing |
+| Save | Persist program to user's profile |
+| Save As | Clone existing program under new name |
 | Library | Browse, select, and load saved programs |
 | Edit | Modify any step's time or speed |
 
@@ -164,7 +599,7 @@ Custom Program
 4. Confirm with YES.
 5. Program name appears at top; tap Select to proceed to execution.
 
-#### 3.1.3 Interval Training
+### 9.3 Interval Training
 
 **Purpose:** Alternating-intensity workout with two configurable steps and set repetition.
 
@@ -194,11 +629,9 @@ Interval Program
 4. Tap Select.
 5. Start via tablet or in-pool button.
 
-#### 3.1.4 Distance (Preset)
+### 9.4 Distance (Preset)
 
 **Purpose:** Pre-programmed distance-based workouts at three difficulty levels.
-
-**Levels:**
 
 | Level | Target User |
 |---|---|
@@ -212,7 +645,7 @@ Interval Program
 3. Tap Select.
 4. Start via tablet or in-pool button.
 
-#### 3.1.5 Sprint Set (Preset)
+### 9.5 Sprint Set (Preset)
 
 **Purpose:** Pre-programmed high-intensity sprint workouts at three difficulty levels.
 
@@ -220,7 +653,9 @@ Interval Program
 
 **Workflow:** Identical to Distance preset workflow.
 
-### 3.2 Navigation & UI Conventions
+---
+
+## 10. Navigation & UI Conventions
 
 | UI Element | Behavior |
 |---|---|
@@ -239,103 +674,264 @@ Interval Program
 | Library Icon | Open saved program browser |
 | Select Button | Queue loaded program for execution |
 | Load Button | Load selected program from library |
+| Light/Dark Toggle | Switch between light and dark themes |
+| User Avatar / Profile | Access account settings, workout history, logout |
+| Admin Gear Icon | Visible only to Administrator role; opens admin panel |
 
 ---
 
-## 4. Non-Functional Requirements
+## 11. Non-Functional Requirements
 
-### 4.1 Reliability
+### 11.1 Reliability
 
 | Requirement | Specification |
 |---|---|
 | Dual-Input Safety | Both tablet and physical air buttons can stop the pool at any time |
-| Failsafe on Disconnect | If Wi-Fi drops, physical air buttons remain operational (controller is independent) |
+| Keep-Alive Failsafe | PLC enters SAFETY STOP if heartbeat is lost (Wi-Fi or Bluetooth disconnect) |
+| No Auto-Resume | After safety stop, pool does not restart without explicit human action |
+| Failsafe on Disconnect | Physical air buttons remain operational regardless of tablet/server state |
 | State Reset | Screen returns to default settings after any stop action |
+| Server Crash Recovery | EDGE Server auto-restarts via systemd (Linux) or Windows Service; Docker restart policy |
 
-### 4.2 Usability
+### 11.2 Usability
 
 | Requirement | Specification |
 |---|---|
-| Touch Target Size | All interactive elements must be large enough for wet-finger operation |
+| Touch Target Size | All interactive elements sized for wet-finger operation (minimum 48x48dp) |
 | Input Validation | Numeric keypads constrain input to valid ranges |
 | Visual Feedback | Selected items highlight green; loaded programs show name at top |
 | Navigation Escape | SwimEx logo always returns to home — no dead-end screens |
 | Minimal Steps | Quick Start allows zero-configuration pool operation |
+| Light/Dark Mode | User-togglable; all templates support both modes |
+| Drag-and-Drop | Admin/Maintenance UI builder is intuitive, no coding required |
 
-### 4.3 Environment
+### 11.3 Environment
 
 | Requirement | Specification |
 |---|---|
 | Operating Conditions | Pool-side (humid, splash-prone environment) |
-| Network | Closed local Wi-Fi; no internet dependency |
-| Time Sync | Manual only; no NTP or automatic time zone |
+| Network | Closed local Wi-Fi and/or Bluetooth; no internet dependency |
+| Time Sync | Manual configuration recommended; server can act as local NTP source |
+| Edge Device | Linux or Windows machine (small form factor, fanless recommended) |
 
-### 4.4 Performance
+### 11.4 Performance
 
 | Requirement | Specification |
 |---|---|
-| Command Latency | Speed changes and start/stop must reflect within 1–2 seconds |
-| UI Responsiveness | Keypad popups and navigation transitions must be near-instant |
-| Program Storage | Must support multiple saved custom programs with no practical limit mentioned |
+| Command Latency | Speed changes and start/stop must reflect within 1–2 seconds end-to-end |
+| Heartbeat Interval | 1–5 seconds configurable; default 2 seconds |
+| UI Responsiveness | Keypad popups and navigation transitions < 200ms |
+| MQTT Throughput | Broker must handle 100+ messages/second for telemetry streams |
+| Program Storage | No practical limit on saved programs per user |
+| Concurrent Users | Server supports multiple simultaneous browser viewers |
+
+### 11.5 Scalability
+
+| Requirement | Specification |
+|---|---|
+| Multi-Pool | Architecture supports one EDGE Server managing multiple pools (via pool_id in MQTT topics) |
+| Multi-Tablet | Multiple kiosk tablets can connect to the same server |
+| Multi-Browser | Unlimited view-only browser sessions; admin sessions limited to prevent conflicts |
 
 ---
 
-## 5. Data Model
+## 12. Data Model
 
-### 5.1 Workout Program Schema
+### 12.1 User & Authentication Schema
+
+```
+User {
+  id:           UUID
+  username:     String (unique)
+  passwordHash: String
+  displayName:  String
+  email:        String (nullable)
+  role:         Enum [ADMINISTRATOR, MAINTENANCE, USER]
+  profilePhoto: Binary (nullable)
+  preferences:  UserPreferences
+  isActive:     Boolean
+  createdAt:    DateTime
+  lastLoginAt:  DateTime
+}
+
+UserPreferences {
+  theme:           Enum [LIGHT, DARK]
+  defaultSpeed:    Integer (0–100)
+  fitnessLevel:    Enum [BEGINNER, INTERMEDIATE, ADVANCED]
+  activeTemplate:  String (template ID)
+}
+```
+
+### 12.2 Device Registration Schema
+
+```
+RegisteredDevice {
+  id:           UUID
+  macAddress:   String (unique, format: XX:XX:XX:XX:XX:XX)
+  deviceName:   String
+  deviceType:   Enum [TABLET, BROWSER, OTHER]
+  isRegistered: Boolean
+  registeredBy: UUID (ref: User.id)
+  registeredAt: DateTime
+  lastSeenAt:   DateTime
+}
+```
+
+### 12.3 Workout Program Schema
 
 ```
 WorkoutProgram {
   id:        UUID
-  name:      String              // User-defined label
+  ownerId:   UUID (ref: User.id)
+  name:      String
   type:      Enum [CUSTOM, INTERVAL, DISTANCE_PRESET, SPRINT_PRESET]
-  sets:      Integer (≥ 1)       // Number of set repetitions
-  steps:     Array<Step> (1–10)  // Ordered sequence of steps
+  sets:      Integer (>= 1)
+  steps:     Array<Step> (1–10)
   level:     Enum [BEGINNER, INTERMEDIATE, ADVANCED]  // Presets only
+  isPublic:  Boolean  // Shared with all users or private
   createdAt: DateTime
   updatedAt: DateTime
 }
 
 Step {
-  order:     Integer (1–10)
-  time:      Duration {
+  order:  Integer (1–10)
+  time:   Duration {
     minutes: Integer (0–480)
     seconds: Integer (0–59)
   }
-  speed:     Integer (0–100)     // Percentage of max current
+  speed:  Integer (0–100)  // Percentage of max current
 }
 ```
 
-### 5.2 Workout Session Schema
+### 12.4 Workout Session Schema
 
 ```
 WorkoutSession {
   id:             UUID
-  programId:      UUID (nullable)   // Null for Quick Start
+  userId:         UUID (ref: User.id, nullable for guest)
+  programId:      UUID (ref: WorkoutProgram.id, nullable for Quick Start)
+  deviceMAC:      String
   startedAt:      DateTime
   endedAt:        DateTime
-  terminatedBy:   Enum [TABLET_END, TABLET_PAUSE, AIR_BUTTON_STOP, TIMER_COMPLETE]
+  terminatedBy:   Enum [TABLET_END, TABLET_PAUSE, AIR_BUTTON_STOP, TIMER_COMPLETE, SAFETY_STOP]
   stepsCompleted: Integer
   totalDuration:  Duration
+  speedLog:       Array<SpeedSample>
+}
+
+SpeedSample {
+  timestamp: DateTime
+  speed:     Integer (0–100)
 }
 ```
 
-### 5.3 State Machine — Workout Lifecycle
+### 12.5 Communication Configuration Schema
 
 ```
-                    ┌─────────┐
-                    │  IDLE   │ ◄──────────────────────┐
-                    └────┬────┘                        │
-                         │ START                       │
-                         ▼                             │
-                    ┌─────────┐                        │
-              ┌────►│ RUNNING │────── TIMER_COMPLETE ──┘
-              │     └────┬────┘                        │
-              │          │ PAUSE                       │
-              │          ▼                             │
-              │     ┌─────────┐                        │
-              └─────│ PAUSED  │────── END/STOP ────────┘
-                    └─────────┘
+CommunicationConfig {
+  id:          UUID
+  protocol:    Enum [MQTT, MODBUS_TCP, HTTP]
+  name:        String
+  isActive:    Boolean
+  config:      ProtocolConfig (polymorphic)
+  createdBy:   UUID (ref: User.id)
+  updatedAt:   DateTime
+}
+
+MqttConfig {
+  brokerHost:  String (default: "localhost" for built-in)
+  brokerPort:  Integer (default: 1883)
+  useTLS:      Boolean
+  username:    String (nullable)
+  password:    String (nullable)
+  topicPrefix: String (default: "swimex/")
+  qos:         Integer (0, 1, or 2)
+  clientId:    String
+}
+
+ModbusTcpConfig {
+  host:            String
+  port:            Integer (default: 502)
+  unitId:          Integer
+  pollingInterval: Integer (ms)
+  timeout:         Integer (ms)
+  registerMap:     Array<RegisterMapping>
+}
+
+HttpConfig {
+  baseUrl:         String
+  authType:        Enum [NONE, BASIC, API_KEY, BEARER]
+  authCredentials: String (encrypted)
+  contentType:     Enum [JSON, XML]
+  pollingInterval: Integer (ms)
+  timeout:         Integer (ms)
+}
+```
+
+### 12.6 Object-Tag Mapping Schema
+
+```
+ObjectTagMapping {
+  id:         UUID
+  objectId:   String  // UI widget identifier
+  objectName: String  // Human-readable name (e.g., "Speed Slider")
+  tagAddress: String  // PLC address (e.g., "40001" for Modbus, "pool/speed" for MQTT)
+  protocol:   Enum [MQTT, MODBUS_TCP, HTTP]
+  dataType:   Enum [INT16, INT32, FLOAT32, BOOLEAN, STRING]
+  accessMode: Enum [READ, WRITE, READ_WRITE]
+  scaleFactor: Float (default: 1.0)
+  offset:      Float (default: 0.0)
+  createdBy:  UUID (ref: User.id)
+  updatedAt:  DateTime
+}
+```
+
+### 12.7 UI Layout Schema
+
+```
+UILayout {
+  id:          UUID
+  name:        String
+  templateId:  String  // Base template (CLASSIC, MODERN, CLINICAL, SPORT, MINIMAL)
+  isActive:    Boolean
+  createdBy:   UUID (ref: User.id)
+  widgets:     Array<WidgetPlacement>
+  updatedAt:   DateTime
+}
+
+WidgetPlacement {
+  widgetType: Enum [BUTTON, SLIDER, GAUGE, NUMERIC_DISPLAY, TIMER, CHART, LABEL, IMAGE]
+  x:          Integer  // Grid position
+  y:          Integer
+  width:      Integer
+  height:     Integer
+  properties: JSON     // Widget-specific config (color, label, tag binding, etc.)
+  tagMapping: UUID (ref: ObjectTagMapping.id, nullable)
+}
+```
+
+### 12.8 State Machine — Workout Lifecycle
+
+```
+                    ┌─────────────┐
+                    │    IDLE      │ ◄─────────────────────────────┐
+                    └──────┬──────┘                                │
+                           │ START                                 │
+                           ▼                                       │
+                    ┌─────────────┐                                │
+              ┌────►│   RUNNING   │──── TIMER_COMPLETE ───────────┘
+              │     └──────┬──────┘                                │
+              │            │                                       │
+              │     ┌──────┴──────┐                                │
+              │     │             │                                │
+              │  PAUSE      DISCONNECT                             │
+              │     │             │                                │
+              │     ▼             ▼                                │
+              │  ┌────────┐  ┌──────────────┐                     │
+              └──│ PAUSED │  │ SAFETY STOP  │── Reconnect + ─────┘
+                 └───┬────┘  │ (Motor Off)  │   Manual START
+                     │       └──────────────┘
+                  END/STOP ──────────────────────────────────────►│
 ```
 
 **Transitions:**
@@ -346,118 +942,272 @@ WorkoutSession {
 | RUNNING | PAUSE (tablet) | PAUSED |
 | RUNNING | END (tablet) or STOP (air button) | IDLE |
 | RUNNING | Timer completes | IDLE |
+| RUNNING | Heartbeat lost (disconnect) | SAFETY STOP |
 | PAUSED | START (resume) | RUNNING |
 | PAUSED | END (tablet) or STOP (air button) | IDLE |
+| SAFETY STOP | Reconnect + explicit START | IDLE (then RUNNING on START) |
 
 ---
 
-## 6. User Interface Flow
+## 13. User Interface Flow
 
-### 6.1 Screen Hierarchy
+### 13.1 Screen Hierarchy
 
 ```
-Home Screen (tap anywhere)
-├── Quick Start / Timed
-│   ├── Speed Input (keypad popup)
-│   ├── Time Input (keypad popup)
-│   ├── START → Running Display (+/- speed, PAUSE, END)
-│   └── STOP → Return to defaults
+Boot → Kiosk Auto-Launch → EDGE Home Screen
 │
-├── Custom Programs
-│   ├── Set Configuration (repetition count)
-│   ├── Step Editor (up to 10 steps: time + speed)
-│   ├── Save / Save As (name input via keyboard)
-│   ├── Library (browse → select → load → confirm)
-│   ├── Select → Execution Screen
-│   └── START → Running Display
+├── Login / Register
+│   ├── Create Account (User self-service)
+│   ├── Login (Username + Password)
+│   └── Continue as Guest (limited access)
 │
-├── Interval
-│   ├── Set Configuration (repetition count, must > 0)
-│   ├── Step 1 Config (time + speed via blue boxes)
-│   ├── Step 2 Config (time + speed via blue boxes)
-│   ├── Select → Execution Screen
-│   └── START → Running Display
+├── [Authenticated User Views]
+│   ├── Quick Start / Timed
+│   │   ├── Speed Input (keypad popup)
+│   │   ├── Time Input (keypad popup)
+│   │   ├── START → Running Display (+/- speed, PAUSE, END)
+│   │   └── STOP → Return to defaults
+│   │
+│   ├── Custom Programs
+│   │   ├── Set Configuration (repetition count)
+│   │   ├── Step Editor (up to 10 steps: time + speed)
+│   │   ├── Save / Save As (name input via keyboard)
+│   │   ├── Library (browse → select → load → confirm)
+│   │   ├── Select → Execution Screen
+│   │   └── START → Running Display
+│   │
+│   ├── Interval
+│   │   ├── Set Configuration (repetition count, must > 0)
+│   │   ├── Step 1 Config (time + speed via blue boxes)
+│   │   ├── Step 2 Config (time + speed via blue boxes)
+│   │   ├── Select → Execution Screen
+│   │   └── START → Running Display
+│   │
+│   ├── Distance (Preset)
+│   │   ├── Level Select (Beginner / Intermediate / Advanced)
+│   │   ├── Select → Execution Screen
+│   │   └── START → Running Display
+│   │
+│   ├── Sprint Set (Preset)
+│   │   ├── Level Select (Beginner / Intermediate / Advanced)
+│   │   ├── Select → Execution Screen
+│   │   └── START → Running Display
+│   │
+│   ├── User Profile
+│   │   ├── Edit Profile (name, photo, preferences)
+│   │   ├── Workout History (session log with details)
+│   │   ├── Usage Statistics (charts, totals)
+│   │   └── Light/Dark Mode Toggle
+│   │
+│   └── Logout
 │
-├── Distance (Preset)
-│   ├── Level Select (Beginner / Intermediate / Advanced)
-│   ├── Select → Execution Screen
-│   └── START → Running Display
+├── [Administrator Views — Hidden from non-admin roles]
+│   ├── Dashboard (system health, connected devices, active sessions)
+│   ├── User Management (list, create, assign roles, disable, delete)
+│   ├── Device Registration (MAC address registry)
+│   ├── Network Config (Wi-Fi AP settings, Bluetooth pairing)
+│   ├── Communication Config (MQTT, Modbus TCP, HTTP)
+│   ├── Object-Tag Mapping (drag-and-drop tag assignment)
+│   ├── UI Builder (drag-and-drop layout editor)
+│   ├── Template Selector (5 built-in + custom)
+│   ├── System Settings (date/time, logging, backup/restore)
+│   └── Exit Kiosk Mode
 │
-└── Sprint Set (Preset)
-    ├── Level Select (Beginner / Intermediate / Advanced)
-    ├── Select → Execution Screen
-    └── START → Running Display
+├── [Maintenance Views]
+│   ├── Communication Config
+│   ├── UI Builder
+│   ├── Diagnostics (connection logs, error logs)
+│   └── Exit Kiosk Mode
+│
+└── [Web Browser — External Access]
+    ├── View-Only Dashboard (no login required)
+    │   └── Live pool status, current workout, speed, time
+    └── Admin Login → Full Access (same as admin views above)
 ```
 
-### 6.2 Execution Screen (Common)
+### 13.2 Execution Screen (Common)
 
 All workout modes converge to a shared execution screen that:
 - Displays current speed, elapsed time, and workout progress.
 - Provides START to begin (if not yet started).
 - Offers two start methods: tablet START button or physical in-pool START button.
 - Shows real-time updates as the workout progresses through steps/sets.
+- Displays connection status indicator (Wi-Fi/Bluetooth signal strength).
+- Shows SAFETY STOP alert if heartbeat is lost.
 
 ---
 
-## 7. Integration Points
+## 14. Integration Points
 
-### 7.1 Tablet ↔ Pool Controller
+### 14.1 EDGE Server ↔ PLC
 
-| Direction | Data |
-|---|---|
-| Tablet → Controller | Start, Stop, Pause, End, Speed Set, Program Load |
-| Controller → Tablet | Current Speed, Elapsed Time, Workout State, Step Progress |
+| Direction | Protocol Options | Data |
+|---|---|---|
+| Server → PLC | MQTT Publish / Modbus Write / HTTP POST | Start, Stop, Pause, Speed Set, Program Load |
+| PLC → Server | MQTT Publish / Modbus Read / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
+| Bidirectional | MQTT Keep-Alive | Heartbeat ping/ack for safety stop mechanism |
 
-### 7.2 Physical Air Buttons ↔ Controller
+### 14.2 EDGE Client ↔ EDGE Server
+
+| Direction | Transport | Data |
+|---|---|---|
+| Client → Server | HTTP REST / WebSocket | User commands, authentication requests, program CRUD |
+| Server → Client | WebSocket / Server-Sent Events | Real-time status updates, speed/time, connection state |
+| Client → Server | HTTP | Workout session logging, usage tracking |
+
+### 14.3 EDGE Client ↔ PLC (Bluetooth Direct)
+
+| Direction | Transport | Data |
+|---|---|---|
+| Client → PLC | Bluetooth Serial/BLE | Start, Stop, Speed commands |
+| PLC → Client | Bluetooth Serial/BLE | Status telemetry, heartbeat ACK |
+
+### 14.4 Physical Air Buttons ↔ PLC
 
 | Button | Action |
 |---|---|
 | START | Begin or resume workout |
-| STOP | Immediately halt workout; resets tablet display |
+| STOP | Immediately halt workout; triggers UI reset on tablet |
 | SLOW | Decrease speed incrementally |
 | FAST | Increase speed incrementally |
 
-### 7.3 Concurrent Control
+### 14.5 Concurrent Control
 
-The tablet and air buttons operate as parallel input sources to the same controller. Both can issue start/stop commands. Speed adjustments from either source are reflected on the tablet display in real time.
+The tablet, web browsers, and air buttons operate as parallel input sources. The EDGE Server arbitrates conflicting commands (e.g., tablet says START while air button says STOP — STOP always wins for safety). All state changes from any source are broadcast to all connected clients in real time.
 
 ---
 
-## 8. Security Considerations
+## 15. Security Considerations
 
 | Concern | Mitigation |
 |---|---|
-| Unauthorized Pool Access | `PoolCtrl` Wi-Fi is a closed, local AP (not internet-connected) |
-| Time Manipulation | Automatic time sync disabled; manual time prevents external drift issues |
-| Physical Safety | In-pool STOP button always functional regardless of tablet/Wi-Fi state |
-| Data Integrity | Programs saved locally on tablet; no cloud sync (no internet) |
+| Unauthorized Pool Control | MAC address registration required for write access; unregistered devices are view-only |
+| Unauthorized System Access | Role-based access control; all auth managed server-side |
+| Kiosk Bypass | Android device lockdown via kiosk mode; exit requires admin/maintenance login |
+| Network Security | Closed local Wi-Fi AP; no internet exposure; optional TLS for MQTT |
+| Credential Storage | Passwords hashed server-side (bcrypt/argon2); never stored on client |
+| Session Hijacking | Token-based sessions with expiry; HTTPS between client and server |
+| Physical Safety | STOP always wins in command conflicts; safety stop on disconnect; air buttons always functional |
+| Data Integrity | All persistent data stored on EDGE Server; client is stateless (WebView) |
+| Audit Trail | Admin actions (role changes, device registration, config changes) logged with timestamps and actor |
 
 ---
 
-## 9. Deployment & Configuration
+## 16. Deployment, Packaging & Installation
 
-### 9.1 Initial Setup Procedure
+### 16.1 EDGE Server
 
-1. **Set Date/Time:** Settings → General Management → Date and Time → set manually. Disable automatic date/time and automatic time zone.
-2. **Connect Wi-Fi:** Settings → Connections → Wi-Fi → select `PoolCtrl` network.
-3. **Launch App:** Home Screen → INTERNET (browser) app → EDGE application loads automatically.
+#### 16.1.1 Native Installer
 
-### 9.2 Environment Assumptions
+| Platform | Installer Type | Contents |
+|---|---|---|
+| Linux | `.deb` / `.rpm` / shell script | Web server, MQTT broker, database, systemd service unit |
+| Windows | `.msi` / `.exe` installer | Web server, MQTT broker, database, Windows Service registration |
 
-- Tablet is mounted or positioned pool-side within Wi-Fi range of the controller.
-- No internet connectivity required or expected.
-- Tablet power is maintained (charging dock or wired power recommended for continuous use).
-- Physical air buttons are always available as a fallback control mechanism.
+**Installation steps (native):**
+1. Run the installer on the edge device.
+2. Installer prompts for: network interface, MQTT port, admin username/password (first-run).
+3. Service is registered and started automatically.
+4. Admin opens `http://<server-ip>:<port>` from any browser to complete setup wizard.
+
+#### 16.1.2 Docker Image
+
+```
+swimex/edge-server:latest
+```
+
+| Aspect | Detail |
+|---|---|
+| Base Image | Alpine Linux (minimal footprint) |
+| Exposed Ports | 80/443 (HTTP/HTTPS), 1883/8883 (MQTT), 502 (Modbus TCP proxy, optional) |
+| Volumes | `/data` for persistent database, `/config` for configuration files |
+| Environment Variables | `ADMIN_USER`, `ADMIN_PASS`, `MQTT_PORT`, `HTTP_PORT`, `TLS_CERT`, `TLS_KEY` |
+| Compose Support | `docker-compose.yml` included for one-command startup |
+| Health Check | Built-in Docker health check endpoint (`/api/health`) |
+
+**Docker quick start:**
+
+```yaml
+version: "3.8"
+services:
+  edge-server:
+    image: swimex/edge-server:latest
+    ports:
+      - "80:80"
+      - "1883:1883"
+    volumes:
+      - edge-data:/data
+      - edge-config:/config
+    environment:
+      - ADMIN_USER=admin
+      - ADMIN_PASS=changeme
+    restart: unless-stopped
+volumes:
+  edge-data:
+  edge-config:
+```
+
+### 16.2 EDGE Client (Android)
+
+| Aspect | Detail |
+|---|---|
+| Package | `.apk` installer (sideloaded or via MDM) |
+| Minimum Android | Android 8.0 (API 26) |
+| Permissions | Device Admin, Draw Over Apps, System Alert Window, Bluetooth, Wi-Fi, Boot Completed |
+| First-Run Config | Server URL/IP, optional Bluetooth pairing |
+
+**Installation steps:**
+1. Enable "Install from Unknown Sources" on the Android tablet.
+2. Transfer and install the `.apk` file.
+3. Grant all requested permissions (Device Admin is critical for kiosk lockdown).
+4. Launch the EDGE Client app.
+5. On first launch, enter the EDGE Server URL/IP address.
+6. The app registers itself as the default launcher and enters kiosk mode.
+7. Subsequent reboots auto-launch into kiosk mode.
+
+### 16.3 Configuration Wizard
+
+Both server and client include a guided first-run configuration wizard:
+
+**Server Wizard:**
+1. Set admin credentials.
+2. Configure network interface and ports.
+3. Configure MQTT broker settings.
+4. (Optional) Import existing configuration backup.
+5. (Optional) Register initial tablet MAC addresses.
+
+**Client Wizard:**
+1. Enter EDGE Server address.
+2. Test connectivity.
+3. (Optional) Configure Bluetooth pairing.
+4. Confirm kiosk mode activation.
+5. Device reboots into kiosk mode.
+
+### 16.4 Web Browser Access
+
+| Scenario | Access Level |
+|---|---|
+| Any device on local network, no login | **View-only**: live pool status, current speed, active workout display |
+| Browser with Administrator login | **Full access**: all features including admin panel, user management, communication config |
+| Browser with User login | **Read + limited write**: can view own profile and history but cannot control pool (control restricted to registered tablets) |
 
 ---
 
-## 10. Glossary
+## 17. Glossary
 
 | Term | Definition |
 |---|---|
-| **EDGE** | SwimEx's branded touch-screen control interface for their swim-in-place pools |
+| **EDGE** | SwimEx's branded touch-screen control platform for swim-in-place pools |
+| **EDGE Server** | The primary application server (Linux/Windows/Docker) hosting the web app, MQTT broker, auth engine, and database |
+| **EDGE Client** | The Android kiosk application that locks down the tablet and renders the EDGE UI |
+| **PLC** | Programmable Logic Controller — the embedded controller managing pool motor and physical I/O |
+| **Kiosk Mode** | Android device lockdown mode that restricts the tablet to only the EDGE application |
 | **Air Buttons** | Pneumatic buttons installed in the pool wall; waterproof physical controls |
-| **PoolCtrl** | The Wi-Fi SSID broadcast by the pool's embedded controller |
+| **PoolCtrl** | Default Wi-Fi SSID for the local network connecting the EDGE system to the PLC |
+| **Keep-Alive** | Periodic heartbeat between the EDGE system and PLC to verify connectivity |
+| **Safety Stop** | Automatic pool motor halt triggered when the keep-alive heartbeat is lost |
+| **MAC Registration** | Server-side registry of authorized tablet hardware addresses; controls write access |
+| **Object-Tag Mapping** | Binding between a UI widget and a PLC data point (register, topic, or endpoint) |
 | **Set** | One complete pass through all programmed steps |
 | **Step** | A single time + speed segment within a set |
 | **Quick Start** | Zero-configuration workout mode; start the pool and adjust on the fly |
@@ -466,11 +1216,16 @@ The tablet and air buttons operate as parallel input sources to the same control
 | **Distance** | Preset workout mode focused on swim distance at three difficulty levels |
 | **Sprint Set** | Preset high-intensity workout at three difficulty levels |
 | **Speed (%)** | Pool current intensity as a percentage of maximum motor output |
+| **MQTT** | Message Queuing Telemetry Transport — lightweight pub/sub messaging protocol |
+| **Modbus TCP** | Industrial communication protocol for PLC register read/write over TCP/IP |
+| **Drag-and-Drop Builder** | Visual editor allowing admin/maintenance to customize the UI layout without code |
+| **Template** | Pre-built UI theme/layout (5 ship with the system: Classic, Modern, Clinical, Sport, Minimal) |
 
 ---
 
-## 11. Revision History
+## 18. Revision History
 
 | Version | Date | Author | Description |
 |---|---|---|---|
 | 1.0 | 2026-02-22 | System Design & Engineering | Initial project description derived from EDGE Operation Instructions v1 |
+| 2.0 | 2026-02-22 | System Design & Engineering | Major expansion: two-tier architecture (server + kiosk client), authentication & RBAC, kiosk mode, admin panel, MQTT broker, multi-protocol PLC communication, keep-alive safety stop, drag-and-drop UI builder, 5 templates, light/dark mode, MAC registration, user profiles & usage tracking, Docker deployment, installer packages, web browser access |
