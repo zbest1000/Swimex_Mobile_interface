@@ -1,6 +1,6 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 2.4
+**Document Version:** 2.5
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
 **System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
 
@@ -243,7 +243,7 @@ All authentication is **server-managed**. The EDGE Server is the single source o
 
 | Role | Description | Permissions |
 |---|---|---|
-| **Super Administrator** | SwimEx engineering / system integrator | Everything Administrator can do **plus**: enable/disable hidden features (Bluetooth), access Super Admin panel, manage feature flags, factory reset, firmware-level configuration. This role is **not visible** in the standard user management UI — it can only be created during initial server provisioning or via CLI/API |
+| **Super Administrator** | SwimEx engineering / BSC Industries system integrator | Everything Administrator can do **plus**: enable/disable hidden features (Bluetooth), access Super Admin panel, manage feature flags, factory reset, firmware-level configuration. This role is **not visible** in the standard user management UI — it can only be created during initial server commissioning or via CLI/API. Account reset requires a **4-segment alphanumeric commissioning code** (set at server commissioning, one code set for SwimEx, one for BSC Industries) |
 | **Administrator** | System owner / IT staff | Full access: all user features + admin panel + kiosk exit + UI builder + communication config + device registration + user management. Cannot see or toggle hidden features (e.g., Bluetooth) unless Super Admin has enabled them |
 | **Maintenance** | On-site technician | Kiosk exit + system diagnostics + communication config + UI builder access |
 | **User** | End-user (swimmer / patient) | Create account, manage own profile, run workouts, save programs, view usage history, toggle light/dark mode |
@@ -269,11 +269,96 @@ All authentication is **server-managed**. The EDGE Server is the single source o
 
 ### 4.4 Role Assignment
 
-- **Super Administrator** accounts are created exclusively during initial server provisioning (first-run wizard) or via CLI/API. They are not visible in the standard user management interface and cannot be created or modified by Administrators.
+- **Super Administrator** accounts are created exclusively during initial server commissioning (first-run wizard) or via CLI/API. They are not visible in the standard user management interface and cannot be created or modified by Administrators. Account reset requires the commissioning code (see Section 4.5).
 - **Administrator** accounts are created during initial server setup (first-run wizard), by Super Administrators, or by existing Administrators.
 - **Maintenance** accounts are created and assigned by Administrators (or Super Administrators).
 - **User** accounts are self-service — anyone can register from the EDGE client login screen.
 - Role escalation (User → Maintenance, User → Administrator) can only be performed by an Administrator or Super Administrator. Escalation to Super Administrator is restricted to CLI/API or another Super Administrator.
+
+### 4.5 Super Administrator Commissioning Code & Account Reset
+
+Super Administrator accounts are protected by a **commissioning code system** that is configured once during initial server commissioning and is the **only** mechanism for resetting a Super Admin account (e.g., forgotten password, locked-out account, account recovery).
+
+#### 4.5.1 Commissioning Code Structure
+
+Each commissioning code consists of **four segments**, each segment being a **6-character alphanumeric string** (A–Z, 0–9, case-insensitive):
+
+```
+Format:  XXXXXX-XXXXXX-XXXXXX-XXXXXX
+
+Example: A3F7K2-9BQ4M1-R8D2W6-5HN3J7
+```
+
+**Two independent commissioning code sets are configured at server commissioning:**
+
+| Code Set | Issuing Organization | Purpose |
+|---|---|---|
+| **SwimEx Code** | SwimEx (manufacturer) | Allows SwimEx engineering personnel to reset the Super Admin account. Used for factory support, warranty service, and authorized maintenance |
+| **BSC Industries Code** | BSC Industries (system integrator) | Allows BSC Industries personnel to reset the Super Admin account. Used for on-site commissioning, system integration, and authorized third-party service |
+
+Either code set can independently reset the Super Admin account — they function as parallel recovery paths.
+
+#### 4.5.2 Commissioning Code Lifecycle
+
+```
+┌─────────────────────────────────────────────────────┐
+│              SERVER COMMISSIONING                     │
+│                                                      │
+│  1. First-run wizard prompts for:                    │
+│     ├── SwimEx commissioning code (4 × 6-char)       │
+│     └── BSC Industries commissioning code (4 × 6-char)│
+│                                                      │
+│  2. Codes are hashed (bcrypt/argon2) and stored      │
+│     in the server's secure configuration store       │
+│                                                      │
+│  3. Original plaintext codes are NOT stored —         │
+│     only the issuing organization retains them       │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key rules:**
+- Commissioning codes are set **once** during initial server setup and **cannot be changed** through the application UI.
+- Codes can only be rotated by re-commissioning the server (factory reset + re-run first-run wizard) or via a Super Admin CLI tool with the current code as proof of authorization.
+- The plaintext codes are never stored on the server — only salted hashes are persisted.
+- Each organization (SwimEx and BSC Industries) is responsible for securely storing and managing its own code set.
+- Codes are case-insensitive during entry (normalized to uppercase before hashing/comparison).
+
+#### 4.5.3 Super Admin Account Reset Flow
+
+When a Super Administrator account needs to be reset (forgotten password, locked out, compromised):
+
+```
+┌──────────────┐                        ┌──────────────┐
+│  Authorized  │   Enter 4-segment      │  EDGE Server │
+│  Personnel   │   commissioning code   │  (Reset API) │
+│  (SwimEx or  │ ──────────────────────►│              │
+│   BSC)       │                        │  Validate    │
+│              │                        │  against     │
+│              │ ◄──────────────────────│  stored hash │
+│              │   Reset confirmed OR   │              │
+│              │   code rejected        │              │
+└──────────────┘                        └──────────────┘
+```
+
+**Reset process:**
+1. Navigate to the Super Admin reset screen (accessible from the login page via a hidden gesture or key combination, or via CLI).
+2. Select the code set to use: **SwimEx** or **BSC Industries**.
+3. Enter the four 6-character alphanumeric segments in order.
+4. The server validates the entered code against the stored hash for the selected organization.
+5. **If valid:** The server prompts for new Super Admin credentials (username + password). The old account is replaced. An audit log entry is created recording the reset event, the code set used (but not the code itself), and a timestamp.
+6. **If invalid:** The attempt is logged, a brief lockout is enforced (escalating: 30s, 1min, 5min, 15min, 1hr for successive failures), and the user is returned to the login screen.
+
+#### 4.5.4 Security Safeguards
+
+| Safeguard | Description |
+|---|---|
+| **Hash-only storage** | Commissioning codes are stored as salted hashes (bcrypt/argon2); plaintext is never persisted |
+| **Rate limiting** | Escalating lockout after failed reset attempts (30s → 1min → 5min → 15min → 1hr) to prevent brute-force |
+| **Audit logging** | Every reset attempt (success or failure) is logged with timestamp, source IP/device, and code set used |
+| **Dual-organization** | Two independent code sets ensure that either SwimEx or BSC Industries can perform recovery independently |
+| **No UI exposure** | The reset screen is not linked from normal navigation; accessed via hidden gesture/key combo or CLI |
+| **No code rotation via UI** | Codes cannot be changed through the web interface — only via re-commissioning or CLI with current code proof |
+| **Tamper detection** | If the commissioning code hashes are deleted or corrupted in the database, the server enters a locked state that requires physical access (CLI with hardware token or re-imaging) to recover |
 
 ---
 
@@ -1084,6 +1169,19 @@ User {
   lastLoginAt:  DateTime
 }
 
+CommissioningCodeStore {
+  id:                    UUID
+  organization:          Enum [SWIMEX, BSC_INDUSTRIES]
+  codeHash:              String              // bcrypt/argon2 hash of the full 4-segment code
+  salt:                  String              // Per-code unique salt
+  failedResetAttempts:   Integer (default: 0)
+  lastFailedAttemptAt:   DateTime (nullable)
+  lockoutUntil:          DateTime (nullable)  // Escalating lockout timestamp
+  lastSuccessfulResetAt: DateTime (nullable)
+  lastResetBy:           String (nullable)    // Source IP or device identifier
+  commissionedAt:        DateTime            // When the code was first set
+}
+
 UserPreferences {
   theme:           Enum [LIGHT, DARK]
   defaultSpeed:    Integer (0–100)
@@ -1491,7 +1589,14 @@ Boot → Kiosk Auto-Launch → EDGE Home Screen
 │   ├── Factory Reset
 │   ├── Firmware-Level Configuration
 │   ├── Super Admin Account Management (CLI/API only for creation)
+│   ├── Commissioning Code Status (view hash status, failed attempts, lockout state — codes themselves NOT shown)
 │   └── System Diagnostics (low-level logs, hardware info)
+│
+├── [Super Admin Account Reset — Hidden screen, accessed via hidden gesture or CLI]
+│   ├── Organization Select (SwimEx or BSC Industries)
+│   ├── 4-Segment Code Entry (6 alphanumeric characters per segment)
+│   ├── Validation → New Credentials Prompt (on success)
+│   └── Lockout Display (on failure, with escalating timeout)
 │
 ├── [Maintenance Views]
 │   ├── Communication Config
@@ -1572,6 +1677,7 @@ The tablet, web browsers, air buttons, and external Modbus TCP masters all opera
 | Network Security | Wired Ethernet for PLC link (physically secure); closed local Wi-Fi for client access; no internet exposure; optional TLS for MQTT |
 | Modbus TCP Server Access | Per-register-range read-only/read-write permissions; administrator controls which registers are exposed; max connection limit prevents resource exhaustion |
 | Credential Storage | Passwords hashed server-side (bcrypt/argon2); never stored on client |
+| Super Admin Recovery | Account reset requires a 4-segment × 6-char alphanumeric commissioning code (SwimEx or BSC Industries); codes hashed at rest; escalating lockout on failed attempts; full audit trail |
 | Session Hijacking | Token-based sessions with expiry; HTTPS between client and server |
 | Physical Safety | STOP always wins in command conflicts; safety stop on disconnect; air buttons always functional |
 | Data Integrity | All persistent data stored on EDGE Server; client is stateless (WebView) |
@@ -1656,15 +1762,19 @@ volumes:
 
 Both server and client include a guided first-run configuration wizard:
 
-**Server Wizard:**
-1. Create Super Administrator account (first-run only; this is the only time a Super Admin can be created via UI).
-2. Set Administrator credentials.
-3. Configure Ethernet interface for PLC connection (IP address, subnet, gateway).
-4. Configure Wi-Fi interface / AP settings for client-facing network.
-5. Configure MQTT broker settings (ports, TLS, credentials).
-6. Set PLC communication protocol and connection parameters (Modbus TCP address, MQTT topics, or HTTP endpoint).
-7. (Optional) Import existing configuration backup.
-8. (Optional) Register initial tablet MAC addresses.
+**Server Wizard (Commissioning):**
+1. Enter **SwimEx commissioning code** (4 segments × 6 alphanumeric characters each). This code is provided by SwimEx and must be securely recorded by the commissioning technician.
+2. Enter **BSC Industries commissioning code** (4 segments × 6 alphanumeric characters each). This code is provided by BSC Industries and must be securely recorded by the commissioning technician.
+3. Create Super Administrator account (first-run only; this is the only time a Super Admin can be created via UI).
+4. Set Administrator credentials.
+5. Configure Ethernet interface for PLC connection (IP address, subnet, gateway).
+6. Configure Wi-Fi interface / AP settings for client-facing network.
+7. Configure MQTT broker settings (ports, TLS, credentials).
+8. Set PLC communication protocol and connection parameters (Modbus TCP address, MQTT topics, or HTTP endpoint).
+9. (Optional) Import existing configuration backup.
+10. (Optional) Register initial tablet MAC addresses.
+
+> **Important:** The commissioning codes entered in steps 1–2 are immediately hashed and stored. The plaintext codes are never saved on the server. SwimEx and BSC Industries must independently retain their respective codes for future Super Admin account recovery.
 
 **Client Wizard:**
 1. Select Wi-Fi network and enter credentials.
@@ -1694,7 +1804,9 @@ Both server and client include a guided first-run configuration wizard:
 | **EDGE Server** | The primary application server (Linux/Windows/Docker) hosting the web app, MQTT broker, auth engine, and database |
 | **EDGE Client** | The Android kiosk application that locks down the tablet and renders the EDGE UI |
 | **PLC** | Programmable Logic Controller — the embedded controller managing pool motor and physical I/O |
-| **Super Administrator** | Highest privilege role; can enable/disable hidden features (e.g., Bluetooth), perform factory reset, and access firmware-level config. Created only via provisioning or CLI/API |
+| **Super Administrator** | Highest privilege role; can enable/disable hidden features (e.g., Bluetooth), perform factory reset, and access firmware-level config. Created only during server commissioning or via CLI/API. Account reset requires a commissioning code |
+| **Commissioning Code** | A 4-segment × 6-character alphanumeric code (format: `XXXXXX-XXXXXX-XXXXXX-XXXXXX`) set during initial server commissioning. Two independent code sets exist — one for SwimEx, one for BSC Industries — either of which can reset a Super Admin account. Stored as salted hashes only |
+| **BSC Industries** | System integrator partner; holds an independent commissioning code for Super Admin recovery |
 | **Kiosk Mode** | Android device lockdown mode that restricts the tablet to only the EDGE application |
 | **Bluetooth (Hidden Feature)** | Fully implemented alternative client-to-server transport; ships disabled and hidden by default; only a Super Administrator can enable and expose it |
 | **Feature Flag** | Server-side toggle controlling whether a hidden feature (e.g., Bluetooth) is enabled and visible to lower roles |
@@ -1738,3 +1850,4 @@ Both server and client include a guided first-run configuration wizard:
 | 2.2 | 2026-02-22 | System Design & Engineering | Bluetooth reclassified: fully implemented but disabled and hidden by default (not a future feature). New Super Administrator role introduced as the only role that can enable/expose Bluetooth. Added feature flags system, Super Admin panel in UI flow, FeatureFlag data model, updated RBAC to 5 tiers, and updated all Bluetooth references throughout |
 | 2.3 | 2026-02-22 | System Design & Engineering | Major graphics system expansion: SVG-first rendering architecture, graphic import (SVG/PNG/JPEG/WebP/GIF/DXF), built-in vector graphic editor, centralized Graphic Library with versioning, comprehensive animation system with data-driven property bindings (rotation, fill level, color, visibility, opacity, scale, position, text, blink, path morph), 8 mapping function types, animation timing controls, expanded built-in widget library (30+ widget types across 10 categories), pool-specific widgets, event bindings for touch interactions, updated data model (GraphicAsset, GraphicElement, AnimationBinding, EventBinding schemas) |
 | 2.4 | 2026-02-22 | System Design & Engineering | Added built-in Modbus TCP server/client: server mode exposes EDGE data as standard Modbus registers for external SCADA/BMS/HMI; client mode polls/writes PLC registers. Internal data bridge synchronizes MQTT, Modbus, and HTTP via unified tag database. Expanded ModbusTcpConfig data model with server/client modes, scan groups, register mappings with byte order and data types. Updated integration points (new Section 14.2 for external systems), security (Modbus access control), and glossary |
+| 2.5 | 2026-02-22 | System Design & Engineering | Super Admin commissioning code system: account reset requires a 4-segment × 6-char alphanumeric code. Two independent code sets (SwimEx and BSC Industries) configured at server commissioning. Codes stored as salted hashes only. Escalating lockout on failed attempts, full audit trail, tamper detection. Added Section 4.5 with code structure, lifecycle, reset flow, and security safeguards. New CommissioningCodeStore data model. Updated server wizard, Super Admin views, security table, and glossary |
