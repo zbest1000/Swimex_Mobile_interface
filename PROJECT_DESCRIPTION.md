@@ -1,6 +1,6 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 2.3
+**Document Version:** 2.4
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
 **System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
 
@@ -123,7 +123,8 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 | Deployment | Native install via installer package, or Docker container |
 | Role | Hosts all application logic, authentication, MQTT broker, database, and serves the web UI |
 | Web Server | Serves the EDGE web application to both the kiosk client and external browsers |
-| MQTT Broker | Built-in broker for real-time PLC communication |
+| MQTT Broker | Built-in broker for real-time pub/sub PLC communication |
+| Modbus TCP Server/Client | Built-in Modbus TCP server (exposes registers to external masters) and client (polls/writes to PLC registers) |
 | Auth Engine | Manages all user accounts, roles, sessions, and MAC address registration |
 | Database | Stores user profiles, workout programs, session history, device registrations, communication configs |
 
@@ -400,15 +401,17 @@ Administrators can map application objects (UI elements, data points, control ac
 
 #### 6.2.6 Communication Configuration
 
-Administrators configure how the EDGE Server communicates with the PLC:
+Administrators configure how the EDGE Server communicates with the PLC and external systems:
 
-| Protocol | Configuration |
-|---|---|
-| **MQTT** | Broker address (defaults to built-in), port, QoS level, topic prefix, TLS enable/disable, client ID, credentials |
-| **Modbus TCP** | PLC IP address, port (default 502), unit ID, register map, polling interval, timeout |
-| **HTTP** | PLC REST API endpoint, authentication (API key / basic auth), request format (JSON/XML), polling interval |
+| Protocol | Mode | Configuration |
+|---|---|---|
+| **MQTT** | Broker (built-in) | Listen port, TLS enable/disable, authentication, topic ACLs |
+| **MQTT** | Client | Broker address (defaults to built-in), port, QoS level, topic prefix, client ID, credentials |
+| **Modbus TCP** | Server (built-in) | Listen port (default 502), exposed unit IDs, register map (which internal data points are exposed as Modbus registers), read-only vs read/write access per register range |
+| **Modbus TCP** | Client | PLC IP address, port, unit ID, register map (which PLC registers to poll/write), polling interval, timeout |
+| **HTTP** | REST API | PLC REST endpoint, authentication (API key / basic auth), request format (JSON/XML), polling interval |
 
-Multiple protocols can be active simultaneously for redundancy or for communicating with different subsystems.
+Multiple protocols and multiple instances of each can be active simultaneously. For example, the server can operate as a Modbus TCP client to poll registers from the PLC while simultaneously running a Modbus TCP server to expose pool data to external SCADA/BMS systems.
 
 ---
 
@@ -416,25 +419,98 @@ Multiple protocols can be active simultaneously for redundancy or for communicat
 
 ### 7.1 Built-in MQTT Broker
 
-The EDGE Server includes an **embedded MQTT broker** as the primary communication backbone between the application and the PLC.
+The EDGE Server includes an **embedded MQTT broker** as one of two built-in communication services.
 
 | Aspect | Detail |
 |---|---|
 | Protocol | MQTT v3.1.1 / v5.0 |
 | Default Port | 1883 (plaintext), 8883 (TLS) |
 | Hosting | Runs as an integrated service within the EDGE Server process |
-| Clients | EDGE Server (internal), PLC controller (over Ethernet) |
+| Clients | EDGE Server (internal), PLC controller (over Ethernet), external systems |
 | Topics | Hierarchical: `swimex/{pool_id}/command/*`, `swimex/{pool_id}/status/*`, `swimex/{pool_id}/keepalive` |
 | QoS | Configurable per topic; QoS 1 (at-least-once) recommended for commands; QoS 0 for telemetry |
 | Retained Messages | Used for current-state topics (speed, mode) so new subscribers get immediate state |
+| ACLs | Per-topic access control lists; restrict which clients can publish/subscribe to specific topics |
 
-### 7.2 Supported Communication Protocols
+### 7.2 Built-in Modbus TCP Server/Client
 
-| Protocol | Direction | Use Case |
-|---|---|---|
-| **MQTT** | Bidirectional | Primary real-time communication: commands to PLC, status/telemetry from PLC |
-| **Modbus TCP** | Bidirectional | Direct register read/write for PLCs that support Modbus; used for legacy controllers |
-| **HTTP** | Bidirectional | REST-style API calls for PLCs with HTTP interfaces; also used for server-to-server integration |
+The EDGE Server includes a **built-in Modbus TCP engine** that operates in both **server** and **client** modes simultaneously.
+
+#### 7.2.1 Modbus TCP Server Mode
+
+The server mode exposes internal EDGE data as standard Modbus registers, allowing external systems to read from and write to the EDGE system using the Modbus TCP protocol.
+
+| Aspect | Detail |
+|---|---|
+| Protocol | Modbus TCP (MBAP header, per Modbus specification) |
+| Default Port | 502 |
+| Hosting | Runs as an integrated service within the EDGE Server process |
+| Unit IDs | Configurable; supports multiple virtual unit IDs for logical separation |
+| Supported Function Codes | FC01 (Read Coils), FC02 (Read Discrete Inputs), FC03 (Read Holding Registers), FC04 (Read Input Registers), FC05 (Write Single Coil), FC06 (Write Single Register), FC15 (Write Multiple Coils), FC16 (Write Multiple Registers) |
+| Register Map | Administrator-configured mapping between internal data points and Modbus register addresses |
+| Access Control | Per-register-range read-only or read/write permissions |
+| Concurrent Connections | Supports multiple simultaneous Modbus TCP master connections |
+
+**Use cases for server mode:**
+- **SCADA integration:** Building Management Systems (BMS) or SCADA platforms can poll the EDGE server as a standard Modbus slave to monitor pool status.
+- **Third-party HMI:** External HMI panels can read/write EDGE registers.
+- **Data logging:** External historians can poll register data for long-term storage.
+- **Multi-system coordination:** Other automation controllers on the network can read pool state and issue commands via Modbus writes.
+
+#### 7.2.2 Modbus TCP Client Mode
+
+The client mode allows the EDGE Server to actively poll registers from and write to the PLC (or any Modbus TCP server on the network).
+
+| Aspect | Detail |
+|---|---|
+| Target | PLC IP address + port + unit ID (configurable) |
+| Polling | Cyclic polling at configurable intervals (10ms–60s per register group) |
+| Write Strategy | Write-on-change (default) or cyclic write (configurable) |
+| Register Groups | Registers organized into scan groups with independent polling rates for priority-based scanning (fast group for speed/status, slow group for diagnostics) |
+| Error Handling | Configurable retries per transaction, timeout per request, automatic reconnection on link failure |
+| Multiple Targets | Can connect to multiple Modbus TCP servers simultaneously (e.g., pool PLC + auxiliary equipment PLC) |
+
+**Use cases for client mode:**
+- **Primary PLC communication:** Poll speed, status, fault codes from the pool PLC; write start/stop/speed commands.
+- **Auxiliary equipment:** Read water temperature, chemistry sensors, filter status from secondary controllers.
+- **Legacy controllers:** Communicate with older PLCs that only support Modbus TCP (no MQTT or HTTP).
+
+#### 7.2.3 Internal Data Bridge
+
+The MQTT broker and Modbus TCP engine share an **internal data bridge** that automatically synchronizes data between protocols:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    EDGE Server                            │
+│                                                          │
+│  ┌──────────┐    Internal     ┌────────────────────┐     │
+│  │  MQTT    │◄──  Data   ───►│  Modbus TCP         │     │
+│  │  Broker  │    Bridge       │  Server / Client    │     │
+│  └──────────┘                 └────────────────────┘     │
+│       ▲                              ▲    │              │
+│       │                              │    ▼              │
+│       │              ┌───────────────┴────────┐          │
+│       │              │  Tag Database          │          │
+│       │              │  (Unified data store   │          │
+│       └──────────────│   for all protocols)   │          │
+│                      └────────────────────────┘          │
+└──────────────────────────────────────────────────────────┘
+```
+
+- A value written to an MQTT topic automatically updates the corresponding Modbus register (and vice versa).
+- A value polled from a PLC via Modbus client is published to the corresponding MQTT topic.
+- The **Tag Database** is the single source of truth — all protocols read from and write to the same unified tag store.
+- Mapping between MQTT topics, Modbus registers, and HTTP endpoints is configured via the admin Object-Tag Mapping interface.
+
+### 7.3 Supported Communication Protocols (Summary)
+
+| Protocol | Mode | Direction | Use Case |
+|---|---|---|---|
+| **MQTT** | Broker (built-in) | Bidirectional | Primary real-time pub/sub backbone; PLC telemetry, commands, keep-alive |
+| **MQTT** | Client | Bidirectional | Connect to external MQTT brokers if needed |
+| **Modbus TCP** | Server (built-in) | Bidirectional | Expose EDGE data to external SCADA/BMS/HMI as Modbus registers |
+| **Modbus TCP** | Client | Bidirectional | Poll/write PLC registers; primary protocol for Modbus-native PLCs |
+| **HTTP** | REST Client | Bidirectional | REST-style API calls for PLCs with HTTP interfaces; server-to-server integration |
 
 ### 7.3 Connection Paths
 
@@ -1104,12 +1180,45 @@ MqttConfig {
 }
 
 ModbusTcpConfig {
-  host:            String
-  port:            Integer (default: 502)
-  unitId:          Integer
+  mode:            Enum [SERVER, CLIENT]
+  // Server mode fields
+  listenPort:      Integer (default: 502)          // SERVER only
+  exposedUnitIds:  Array<Integer>                   // SERVER only
+  serverRegisterMap: Array<ServerRegisterMapping>   // SERVER only — which tags to expose as registers
+  accessPolicy:    Enum [READ_ONLY, READ_WRITE]    // SERVER only — default access for unmapped ranges
+  maxConnections:  Integer (default: 10)            // SERVER only
+  // Client mode fields
+  host:            String                           // CLIENT only — PLC IP address
+  port:            Integer (default: 502)           // CLIENT only
+  unitId:          Integer                          // CLIENT only
+  pollingInterval: Integer (ms)                     // CLIENT only
+  timeout:         Integer (ms)                     // CLIENT only
+  retries:         Integer (default: 3)             // CLIENT only
+  writeStrategy:   Enum [WRITE_ON_CHANGE, CYCLIC]   // CLIENT only
+  scanGroups:      Array<ScanGroup>                 // CLIENT only — register groups with independent poll rates
+}
+
+ServerRegisterMapping {
+  registerType:    Enum [COIL, DISCRETE_INPUT, HOLDING_REGISTER, INPUT_REGISTER]
+  startAddress:    Integer
+  count:           Integer
+  tagIds:          Array<UUID> (ref: ObjectTagMapping.id)
+  access:          Enum [READ_ONLY, READ_WRITE]
+}
+
+ScanGroup {
+  name:            String                           // e.g., "Fast — Speed/Status", "Slow — Diagnostics"
   pollingInterval: Integer (ms)
-  timeout:         Integer (ms)
   registerMap:     Array<RegisterMapping>
+}
+
+RegisterMapping {
+  registerType:    Enum [COIL, DISCRETE_INPUT, HOLDING_REGISTER, INPUT_REGISTER]
+  startAddress:    Integer
+  count:           Integer
+  tagIds:          Array<UUID> (ref: ObjectTagMapping.id)
+  byteOrder:       Enum [BIG_ENDIAN, LITTLE_ENDIAN, BIG_ENDIAN_WORD_SWAP, LITTLE_ENDIAN_WORD_SWAP]
+  dataType:        Enum [INT16, UINT16, INT32, UINT32, FLOAT32, FLOAT64, BOOLEAN, STRING]
 }
 
 HttpConfig {
@@ -1366,7 +1475,7 @@ Boot → Kiosk Auto-Launch → EDGE Home Screen
 │   ├── Device Registration (MAC address registry)
 │   ├── Network Config (Wi-Fi AP settings)
 │   ├── Bluetooth Config (only visible if Super Admin has enabled Bluetooth)
-│   ├── Communication Config (MQTT, Modbus TCP, HTTP)
+│   ├── Communication Config (MQTT broker/client, Modbus TCP server/client, HTTP)
 │   ├── Object-Tag Mapping (drag-and-drop tag assignment)
 │   ├── Graphic Library (import, browse, categorize, version graphics)
 │   ├── Graphic Builder (built-in SVG editor for creating/editing graphics)
@@ -1416,11 +1525,18 @@ All workout modes converge to a shared execution screen that:
 
 | Direction | Transport | Protocol Options | Data |
 |---|---|---|---|
-| Server → PLC | Ethernet | MQTT Publish / Modbus Write / HTTP POST | Start, Stop, Pause, Speed Set, Program Load |
-| PLC → Server | Ethernet | MQTT Publish / Modbus Read / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
+| Server → PLC | Ethernet | MQTT Publish / Modbus TCP Client Write / HTTP POST | Start, Stop, Pause, Speed Set, Program Load |
+| PLC → Server | Ethernet | MQTT Publish / Modbus TCP Client Read (polling) / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
 | Bidirectional | Ethernet | MQTT Keep-Alive | Heartbeat ping/ack for safety stop mechanism |
 
-### 14.2 EDGE Client ↔ EDGE Server (Wi-Fi Primary; Bluetooth When Enabled)
+### 14.2 EDGE Server ↔ External Systems (Modbus TCP Server)
+
+| Direction | Transport | Protocol | Data |
+|---|---|---|---|
+| External Master → Server | Ethernet | Modbus TCP (server mode, FC05/06/15/16) | Write commands from SCADA/BMS (start, stop, speed) |
+| Server → External Master | Ethernet | Modbus TCP (server mode, FC01/02/03/04) | Pool status registers (speed, state, temp, faults) exposed as standard Modbus registers |
+
+### 14.3 EDGE Client ↔ EDGE Server (Wi-Fi Primary; Bluetooth When Enabled)
 
 | Direction | Transport | Data |
 |---|---|---|
@@ -1431,7 +1547,7 @@ All workout modes converge to a shared execution screen that:
 
 > **Bluetooth note:** Bluetooth is fully implemented and provides an identical transport for all client ↔ server data flows. The data model and API contracts are the same regardless of transport. Bluetooth is disabled and hidden by default — a Super Administrator must enable it before it becomes available.
 
-### 14.4 Physical Air Buttons ↔ PLC
+### 14.5 Physical Air Buttons ↔ PLC
 
 | Button | Action |
 |---|---|
@@ -1440,9 +1556,9 @@ All workout modes converge to a shared execution screen that:
 | SLOW | Decrease speed incrementally |
 | FAST | Increase speed incrementally |
 
-### 14.5 Concurrent Control
+### 14.6 Concurrent Control
 
-The tablet, web browsers, and air buttons operate as parallel input sources. The EDGE Server is the **single point of arbitration** — it receives commands from all sources (client over Wi-Fi, browser over Wi-Fi, air buttons via PLC over Ethernet) and resolves conflicts. STOP always wins for safety. All state changes from any source are broadcast to all connected clients in real time.
+The tablet, web browsers, air buttons, and external Modbus TCP masters all operate as parallel input sources. The EDGE Server is the **single point of arbitration** — it receives commands from all sources (client over Wi-Fi, browser over Wi-Fi, external systems via Modbus TCP server, air buttons via PLC over Ethernet) and resolves conflicts. STOP always wins for safety. All state changes from any source are synchronized across the internal data bridge and broadcast to all connected clients and protocols in real time.
 
 ---
 
@@ -1454,6 +1570,7 @@ The tablet, web browsers, and air buttons operate as parallel input sources. The
 | Unauthorized System Access | Role-based access control; all auth managed server-side |
 | Kiosk Bypass | Android device lockdown via kiosk mode; exit requires admin/maintenance login |
 | Network Security | Wired Ethernet for PLC link (physically secure); closed local Wi-Fi for client access; no internet exposure; optional TLS for MQTT |
+| Modbus TCP Server Access | Per-register-range read-only/read-write permissions; administrator controls which registers are exposed; max connection limit prevents resource exhaustion |
 | Credential Storage | Passwords hashed server-side (bcrypt/argon2); never stored on client |
 | Session Hijacking | Token-based sessions with expiry; HTTPS between client and server |
 | Physical Safety | STOP always wins in command conflicts; safety stop on disconnect; air buttons always functional |
@@ -1488,7 +1605,7 @@ swimex/edge-server:latest
 | Aspect | Detail |
 |---|---|
 | Base Image | Alpine Linux (minimal footprint) |
-| Exposed Ports | 80/443 (HTTP/HTTPS for web UI), 1883/8883 (MQTT broker), 502 (Modbus TCP to PLC, optional passthrough) |
+| Exposed Ports | 80/443 (HTTP/HTTPS for web UI), 1883/8883 (MQTT broker), 502 (Modbus TCP server — exposes EDGE data to external masters) |
 | Network | Requires access to both the Wi-Fi network (client-facing) and the Ethernet network (PLC-facing); dual-NIC or VLAN recommended |
 | Volumes | `/data` for persistent database, `/config` for configuration files |
 | Environment Variables | `ADMIN_USER`, `ADMIN_PASS`, `MQTT_PORT`, `HTTP_PORT`, `TLS_CERT`, `TLS_KEY` |
@@ -1597,6 +1714,9 @@ Both server and client include a guided first-run configuration wizard:
 | **Speed (%)** | Pool current intensity as a percentage of maximum motor output |
 | **MQTT** | Message Queuing Telemetry Transport — lightweight pub/sub messaging protocol |
 | **Modbus TCP** | Industrial communication protocol for PLC register read/write over TCP/IP |
+| **Modbus TCP Server** | Built-in service that exposes EDGE data as standard Modbus registers, allowing external SCADA/BMS/HMI systems to read/write pool data |
+| **Modbus TCP Client** | Built-in service that actively polls and writes PLC registers over Ethernet |
+| **Internal Data Bridge** | Synchronization layer within the EDGE Server that keeps MQTT topics, Modbus registers, and HTTP endpoints in sync via a unified tag database |
 | **Graphic Library** | Centralized server-side storage for all imported and built-in SVG/raster graphic assets |
 | **Graphic Builder** | Built-in SVG vector editor for creating and modifying graphics directly within the EDGE application |
 | **Animation Binding** | Configuration that connects a PLC tag value to a graphic property (rotation, fill, color, etc.) through a mapping function |
@@ -1617,3 +1737,4 @@ Both server and client include a guided first-run configuration wizard:
 | 2.1 | 2026-02-22 | System Design & Engineering | Connectivity model correction: Server ↔ PLC is wired Ethernet only (not wireless); Client ↔ Server is Wi-Fi primary with Bluetooth as future addon; client never communicates directly with PLC; two-segment keep-alive (Ethernet + Wi-Fi); updated architecture diagrams, connection paths, integration points, deployment wizards, and glossary |
 | 2.2 | 2026-02-22 | System Design & Engineering | Bluetooth reclassified: fully implemented but disabled and hidden by default (not a future feature). New Super Administrator role introduced as the only role that can enable/expose Bluetooth. Added feature flags system, Super Admin panel in UI flow, FeatureFlag data model, updated RBAC to 5 tiers, and updated all Bluetooth references throughout |
 | 2.3 | 2026-02-22 | System Design & Engineering | Major graphics system expansion: SVG-first rendering architecture, graphic import (SVG/PNG/JPEG/WebP/GIF/DXF), built-in vector graphic editor, centralized Graphic Library with versioning, comprehensive animation system with data-driven property bindings (rotation, fill level, color, visibility, opacity, scale, position, text, blink, path morph), 8 mapping function types, animation timing controls, expanded built-in widget library (30+ widget types across 10 categories), pool-specific widgets, event bindings for touch interactions, updated data model (GraphicAsset, GraphicElement, AnimationBinding, EventBinding schemas) |
+| 2.4 | 2026-02-22 | System Design & Engineering | Added built-in Modbus TCP server/client: server mode exposes EDGE data as standard Modbus registers for external SCADA/BMS/HMI; client mode polls/writes PLC registers. Internal data bridge synchronizes MQTT, Modbus, and HTTP via unified tag database. Expanded ModbusTcpConfig data model with server/client modes, scan groups, register mappings with byte order and data types. Updated integration points (new Section 14.2 for external systems), security (Modbus access control), and glossary |
