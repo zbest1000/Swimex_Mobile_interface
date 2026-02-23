@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 60" width="200" height="60">
+  <defs>
+    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#62B6CB"/>
+      <stop offset="100%" style="stop-color:#1B4965"/>
+    </linearGradient>
+  </defs>
+  <!-- Wave icon -->
+  <path d="M10 35 Q25 25 40 35 T70 35 T100 35 T130 35 T160 35 T190 35" 
+        fill="none" stroke="url(#waveGrad)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M10 45 Q25 35 40 45 T70 45 T100 45 T130 45 T160 45 T190 45" 
+        fill="none" stroke="url(#waveGrad)" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+  <!-- SwimEx text -->
+  <text x="100" y="25" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" 
+        font-size="22" font-weight="700" fill="currentColor">SwimEx</text>
+</svg>
