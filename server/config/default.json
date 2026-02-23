@@ -1,0 +1,53 @@
+{
+  "server": {
+    "httpPort": 80,
+    "httpsPort": 443,
+    "mqttPort": 1883,
+    "mqttTlsPort": 8883,
+    "modbusPort": 502,
+    "poolId": "default"
+  },
+  "auth": {
+    "jwtExpiresIn": "24h",
+    "sessionCleanupIntervalMs": 3600000
+  },
+  "keepAlive": {
+    "heartbeatIntervalMs": 2000,
+    "missedHeartbeatsThreshold": 3
+  },
+  "mqtt": {
+    "broker": {
+      "port": 1883,
+      "tlsEnabled": false
+    },
+    "topics": {
+      "prefix": "swimex/",
+      "qos": 1
+    }
+  },
+  "modbus": {
+    "server": {
+      "port": 502,
+      "unitId": 1,
+      "maxConnections": 10
+    },
+    "client": {
+      "pollingIntervalMs": 500,
+      "timeoutMs": 5000,
+      "retries": 3
+    }
+  },
+  "wifi": {
+    "defaultSSID": "PoolCtrl",
+    "channel": 6
+  },
+  "ui": {
+    "defaultTemplate": "modern",
+    "defaultTheme": "LIGHT",
+    "animationFpsCap": 60,
+    "transitionDurationMs": 200
+  },
+  "logging": {
+    "level": "info"
+  }
+}

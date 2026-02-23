@@ -1,0 +1,20 @@
+services:
+  edge-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "80:80"
+      - "1883:1883"
+      - "502:502"
+    volumes:
+      - edge-data:/data
+      - edge-config:/config
+    environment:
+      ADMIN_USER: admin
+      ADMIN_PASS: changeme
+    restart: unless-stopped
+
+volumes:
+  edge-data:
+  edge-config:

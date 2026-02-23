@@ -1,0 +1,48 @@
+{
+  "id": "classic",
+  "name": "Classic",
+  "description": "Clean, traditional layout matching the original EDGE look; solid colors, standard fonts",
+  "bestFor": "Existing SwimEx installations upgrading to the new system",
+  "colors": {
+    "primary": "#1565C0",
+    "primaryLight": "#1976D2",
+    "primaryDark": "#0D47A1",
+    "secondary": "#43A047",
+    "accent": "#FF8F00",
+    "background": "#F5F5F5",
+    "surface": "#FFFFFF",
+    "text": "#212121",
+    "textSecondary": "#757575",
+    "error": "#D32F2F",
+    "success": "#388E3C",
+    "warning": "#F57F17",
+    "divider": "#BDBDBD"
+  },
+  "darkColors": {
+    "primary": "#42A5F5",
+    "primaryLight": "#64B5F6",
+    "primaryDark": "#1E88E5",
+    "secondary": "#66BB6A",
+    "accent": "#FFB74D",
+    "background": "#121212",
+    "surface": "#1E1E1E",
+    "text": "#E0E0E0",
+    "textSecondary": "#9E9E9E",
+    "error": "#EF5350",
+    "success": "#4CAF50",
+    "warning": "#FFC107",
+    "divider": "#424242"
+  },
+  "typography": {
+    "fontFamily": "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    "headingSize": "28px",
+    "bodySize": "16px",
+    "buttonSize": "18px"
+  },
+  "layout": {
+    "borderRadius": "4px",
+    "cardElevation": "0 1px 3px rgba(0,0,0,0.12)",
+    "spacing": "16px",
+    "buttonMinHeight": "48px"
+  }
+}

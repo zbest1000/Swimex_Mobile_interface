@@ -1,0 +1,48 @@
+{
+  "id": "modern",
+  "name": "Modern",
+  "description": "Flat material design with bold accent colors, large touch targets, subtle shadows and transitions",
+  "bestFor": "General fitness and therapy facilities",
+  "colors": {
+    "primary": "#1B4965",
+    "primaryLight": "#62B6CB",
+    "primaryDark": "#0D1B2A",
+    "secondary": "#2ECC71",
+    "accent": "#3498DB",
+    "background": "#F8F9FA",
+    "surface": "#FFFFFF",
+    "text": "#2C3E50",
+    "textSecondary": "#7F8C8D",
+    "error": "#E74C3C",
+    "success": "#2ECC71",
+    "warning": "#F39C12",
+    "divider": "#DEE2E6"
+  },
+  "darkColors": {
+    "primary": "#62B6CB",
+    "primaryLight": "#5BC0EB",
+    "primaryDark": "#0D1B2A",
+    "secondary": "#2ECC71",
+    "accent": "#3498DB",
+    "background": "#0D1B2A",
+    "surface": "#1B2838",
+    "text": "#ECF0F1",
+    "textSecondary": "#95A5A6",
+    "error": "#E74C3C",
+    "success": "#27AE60",
+    "warning": "#F1C40F",
+    "divider": "#2C3E50"
+  },
+  "typography": {
+    "fontFamily": "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    "headingSize": "32px",
+    "bodySize": "16px",
+    "buttonSize": "18px"
+  },
+  "layout": {
+    "borderRadius": "12px",
+    "cardElevation": "0 4px 12px rgba(0,0,0,0.08)",
+    "spacing": "20px",
+    "buttonMinHeight": "56px"
+  }
+}

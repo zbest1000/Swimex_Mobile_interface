@@ -1,42 +1,92 @@
-# EDGE Server
+# SwimEx EDGE Server
 
-The EDGE Server is the primary application backend for the SwimEx EDGE platform. It runs on a Linux or Windows edge device (or as a Docker container) and hosts all core services.
+Web application server for SwimEx swim-in-place pool control.
 
-## Components
+## Architecture
 
-| Component | Directory | Description |
+- **Runtime**: Node.js + TypeScript
+- **HTTP**: Express.js REST API + static file serving
+- **Database**: SQLite (better-sqlite3)
+- **MQTT**: Aedes embedded broker
+- **Modbus TCP**: Server (expose data) + Client (poll PLC)
+- **WebSocket**: Real-time updates, keepalive heartbeat
+- **Auth**: Argon2 password hashing, JWT sessions
+
+## Quick Start
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Environment variables:
+
+| Variable | Default | Description |
 |---|---|---|
-| Main Application | `src/app/` | Application entry point, startup, dependency injection |
-| Authentication | `src/auth/` | User accounts, RBAC, session tokens, commissioning codes |
-| MQTT Broker | `src/mqtt/` | Built-in MQTT v3.1.1/v5.0 broker for PLC communication |
-| Modbus TCP | `src/modbus/` | Built-in Modbus TCP server (exposes registers) and client (polls PLC) |
-| HTTP/REST | `src/http/` | REST API for client communication, admin endpoints |
-| Communication Bridge | `src/communication/` | Internal data bridge syncing MQTT, Modbus, and HTTP via tag database |
-| Database | `src/database/` | ORM models and database migrations |
-| Graphics Engine | `src/graphics/` | SVG rendering, graphic library, animation binding engine |
-| Workouts | `src/workouts/` | Workout mode logic (Quick Start, Custom, Interval, Presets) |
-| Admin | `src/admin/` | Admin panel logic (user management, device registration, network config) |
-| Tag Database | `src/tags/` | Unified tag store — single source of truth for all protocols |
-| WebSocket | `src/websocket/` | Real-time client communication (status updates, commands) |
-| Utilities | `src/utils/` | Shared helpers, logging, validation |
+| `HTTP_PORT` | 80 | HTTP server port |
+| `MQTT_PORT` | 1883 | MQTT broker port |
+| `MODBUS_PORT` | 502 | Modbus TCP server port |
+| `DATA_DIR` | ./data | SQLite database location |
+| `CONFIG_DIR` | ./config | Configuration files |
+| `ADMIN_USER` | admin | Default admin username |
+| `ADMIN_PASS` | changeme | Default admin password |
+| `JWT_SECRET` | (dev default) | JWT signing secret |
+| `POOL_ID` | default | Pool identifier for MQTT topics |
 
-## Other Directories
+## API Endpoints
 
-| Directory | Description |
-|---|---|
-| `config/` | Configuration files (server.yml, mqtt.yml, modbus.yml) |
-| `templates/` | 5 built-in UI templates (Classic, Modern, Clinical, Sport, Minimal) |
-| `assets/` | Built-in SVG widgets, icons, and graphics |
-| `tests/` | Unit and integration test suites |
-| `docker/` | Dockerfile, docker-compose.yml, entrypoint scripts |
-| `installer/` | Native installer scripts for Linux (.deb/.rpm) and Windows (.msi) |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | - | Self-service user registration |
+| POST | `/api/auth/login` | - | Login, returns JWT token |
+| POST | `/api/auth/commission` | - | First-run commissioning wizard |
+| GET | `/api/auth/me` | JWT | Current user profile |
+| GET | `/api/workouts/active` | - | Active workout state |
+| POST | `/api/workouts/quick-start` | JWT+MAC | Start Quick Start workout |
+| POST | `/api/workouts/start-program` | JWT+MAC | Start saved program |
+| POST | `/api/workouts/pause` | JWT+MAC | Pause workout |
+| POST | `/api/workouts/stop` | JWT+MAC | Stop workout |
+| GET | `/api/workouts/programs` | JWT | List user programs |
+| GET | `/api/admin/dashboard` | Admin | System dashboard |
+| GET | `/api/admin/devices` | Admin | Device registry |
+| GET | `/api/admin/communication` | Admin | Communication configs |
+| GET | `/api/admin/tags` | Admin | Object-tag mappings |
+| GET | `/api/graphics` | - | Graphic library |
+| GET | `/api/health` | - | Health check |
 
-## Documentation
+## WebSocket
 
-- [Server Setup Guide](../docs/server/SETUP.md)
-- [Configuration Reference](../docs/server/CONFIGURATION.md)
-- [MQTT Broker](../docs/server/MQTT_BROKER.md)
-- [Modbus TCP Server/Client](../docs/server/MODBUS_TCP.md)
-- [Tag Database](../docs/server/TAG_DATABASE.md)
-- [REST API](../docs/api/REST_API.md)
-- [Docker Deployment](../docs/deployment/DOCKER_DEPLOYMENT.md)
+Connect to `ws://<host>/ws?token=<jwt>` for real-time updates:
+
+- `workout_update` — Workout state changes
+- `tag_update` — PLC tag value changes
+- `keepalive` — Heartbeat ping/pong
+- `connected` — Initial state on connection
+
+## Docker
+
+```bash
+cd docker
+docker-compose up -d
+```
+
+## Project Structure
+
+```
+src/
+├── app/          # Main entry point
+├── auth/         # Authentication engine
+├── mqtt/         # Embedded MQTT broker
+├── modbus/       # Modbus TCP server/client
+├── http/         # Express routes
+├── communication/# Internal data bridge
+├── database/     # SQLite models & migrations
+├── graphics/     # Graphics engine
+├── workouts/     # Workout state machine
+├── admin/        # Admin panel services
+├── tags/         # Unified tag database
+├── websocket/    # WebSocket handler
+├── shared/       # Shared models/protocols
+└── utils/        # Config, logger, errors
+```
