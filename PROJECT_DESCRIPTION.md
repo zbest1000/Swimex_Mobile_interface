@@ -1,6 +1,6 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 2.0
+**Document Version:** 2.1
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
 **System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
 
@@ -36,7 +36,7 @@ The **SwimEx EDGE** is a two-tier control platform for SwimEx swim-in-place (cou
 1. **EDGE Server** — A web application server running on a Linux or Windows edge device that hosts the main application, built-in MQTT broker, authentication engine, and all persistent data.
 2. **EDGE Client** — An Android application that runs in full kiosk mode, completely taking over the Android tablet, booting directly into the EDGE interface, and preventing exit without authorized credentials.
 
-The system communicates with the pool's PLC (Programmable Logic Controller) over Wi-Fi or Bluetooth using MQTT, Modbus TCP, or HTTP. It provides real-time control of pool speed, workout programming, user profile management, and administrative configuration — all within a closed, local network with no internet dependency.
+The EDGE Server communicates with the pool's PLC (Programmable Logic Controller) over a **wired Ethernet** connection using MQTT, Modbus TCP, or HTTP. The EDGE Client (tablet) communicates with the EDGE Server over **Wi-Fi** (primary), with **Bluetooth as a planned future addon** for server-to-client communication. The client never communicates directly with the PLC — all control and telemetry flows through the server. The entire system operates within a closed, local network with no internet dependency.
 
 ### 1.1 Business Context
 
@@ -46,7 +46,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 - Offering user accounts with profile persistence and workout history tracking.
 - Providing administrator-level system configuration (networking, device registration, communication mapping).
 - Supporting drag-and-drop UI customization with 5 built-in templates.
-- Enabling multi-protocol PLC communication (MQTT, Modbus TCP, HTTP) with automatic safety stop on disconnect.
+- Enabling multi-protocol PLC communication (MQTT, Modbus TCP, HTTP) over wired Ethernet with automatic safety stop on disconnect.
 
 ### 1.2 Key Stakeholders
 
@@ -66,45 +66,51 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 ### 2.1 High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          LOCAL NETWORK (No Internet)                         │
-│                                                                             │
-│  ┌──────────────────────┐    Wi-Fi / Bluetooth    ┌──────────────────────┐  │
-│  │  EDGE SERVER         │◄───────────────────────►│  PLC / Pool          │  │
-│  │  (Linux or Windows)  │   MQTT / Modbus TCP /   │  Controller          │  │
-│  │                      │   HTTP                   │                      │  │
-│  │  ┌────────────────┐  │                          │  ┌────────────────┐  │  │
-│  │  │ Web App Server │  │    Keep-Alive Heartbeat  │  │ Motor Driver   │  │  │
-│  │  │ (Serves UI)    │──┼─────────────────────────►│  │ Current Gen    │  │  │
-│  │  ├────────────────┤  │                          │  │ Sensor Array   │  │  │
-│  │  │ MQTT Broker    │  │◄── Status / Telemetry ──│  └────────────────┘  │  │
-│  │  │ (Built-in)     │  │                          │                      │  │
-│  │  ├────────────────┤  │                          │  ┌────────────────┐  │  │
-│  │  │ Auth Engine    │  │                          │  │ Air Buttons    │  │  │
-│  │  │ (All accounts) │  │                          │  │ (Physical I/O) │  │  │
-│  │  ├────────────────┤  │                          │  └────────────────┘  │  │
-│  │  │ Database       │  │                          └──────────────────────┘  │
-│  │  │ (Users, Progs) │  │                                                   │
-│  │  └────────────────┘  │                                                   │
-│  └──────────┬───────────┘                                                   │
-│             │ HTTP/WebSocket                                                │
-│             │ (Serves Web App)                                              │
-│             │                                                               │
-│  ┌──────────┴───────────┐        ┌──────────────────────┐                   │
-│  │  EDGE CLIENT         │        │  WEB BROWSER          │                  │
-│  │  (Android Kiosk App) │        │  (Any Device)         │                  │
-│  │                      │        │                       │                  │
-│  │  ┌────────────────┐  │        │  ┌─────────────────┐  │                  │
-│  │  │ Kiosk Shell    │  │        │  │ View-Only Mode  │  │                  │
-│  │  │ (Full Device   │  │        │  │ (Read access)   │  │                  │
-│  │  │  Lockdown)     │  │        │  │                 │  │                  │
-│  │  ├────────────────┤  │        │  │ Full Access     │  │                  │
-│  │  │ Embedded       │  │        │  │ (Admin login    │  │                  │
-│  │  │ WebView        │  │        │  │  required)      │  │                  │
-│  │  │ (Renders UI)   │  │        │  └─────────────────┘  │                  │
-│  │  └────────────────┘  │        └──────────────────────┘                   │
-│  └──────────────────────┘                                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            LOCAL NETWORK (No Internet)                            │
+│                                                                                  │
+│                         Wired Ethernet                                           │
+│  ┌──────────────────────┐  (MQTT / Modbus TCP /  ┌──────────────────────┐       │
+│  │  EDGE SERVER         │   HTTP)                 │  PLC / Pool          │       │
+│  │  (Linux or Windows)  │◄══════════════════════►│  Controller          │       │
+│  │                      │  Keep-Alive Heartbeat   │                      │       │
+│  │  ┌────────────────┐  │                         │  ┌────────────────┐  │       │
+│  │  │ Web App Server │  │                         │  │ Motor Driver   │  │       │
+│  │  │ (Serves UI)    │  │                         │  │ Current Gen    │  │       │
+│  │  ├────────────────┤  │                         │  │ Sensor Array   │  │       │
+│  │  │ MQTT Broker    │  │                         │  └────────────────┘  │       │
+│  │  │ (Built-in)     │  │                         │                      │       │
+│  │  ├────────────────┤  │                         │  ┌────────────────┐  │       │
+│  │  │ Auth Engine    │  │                         │  │ Air Buttons    │  │       │
+│  │  │ (All accounts) │  │                         │  │ (Physical I/O) │  │       │
+│  │  ├────────────────┤  │                         │  └────────────────┘  │       │
+│  │  │ Database       │  │                         └──────────────────────┘       │
+│  │  │ (Users, Progs) │  │                                                        │
+│  │  └────────────────┘  │                                                        │
+│  └──────────┬───────────┘                                                        │
+│             │                                                                    │
+│             │ Wi-Fi (primary)                                                    │
+│             │ Bluetooth (future addon)                                           │
+│             │ HTTP / WebSocket                                                   │
+│             │                                                                    │
+│  ┌──────────┴───────────┐        ┌──────────────────────┐                        │
+│  │  EDGE CLIENT         │        │  WEB BROWSER          │                       │
+│  │  (Android Kiosk App) │        │  (Any Device)         │                       │
+│  │                      │        │                       │                       │
+│  │  ┌────────────────┐  │        │  ┌─────────────────┐  │                       │
+│  │  │ Kiosk Shell    │  │        │  │ View-Only Mode  │  │                       │
+│  │  │ (Full Device   │  │        │  │ (Read access)   │  │                       │
+│  │  │  Lockdown)     │  │        │  │                 │  │                       │
+│  │  ├────────────────┤  │        │  │ Full Access     │  │                       │
+│  │  │ Embedded       │  │        │  │ (Admin login    │  │                       │
+│  │  │ WebView        │  │        │  │  required)      │  │                       │
+│  │  │ (Renders UI)   │  │        │  └─────────────────┘  │                       │
+│  │  └────────────────┘  │        └──────────────────────┘                        │
+│  └──────────────────────┘                                                        │
+│                                                                                  │
+│  NOTE: Client ↔ PLC communication ALWAYS routes through the EDGE Server.         │
+│  The client NEVER communicates directly with the PLC.                            │
+└──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 Component Breakdown
@@ -130,7 +136,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 | Boot Behavior | Launches automatically on device boot; replaces the Android launcher |
 | Device Lockdown | Completely overrides Android OS — no access to home screen, settings, notifications, or other apps |
 | Exit Mechanism | Only users with **Administrator** or **Maintenance** role can exit kiosk mode |
-| Connectivity | Connects to EDGE Server over local Wi-Fi; also supports Bluetooth for PLC communication |
+| Connectivity | Connects to EDGE Server over local Wi-Fi (primary); Bluetooth connectivity to server is a **planned future addon** |
 | Rendering | Embedded WebView loads the EDGE web application served by the EDGE Server |
 
 #### 2.2.3 PLC / Pool Controller
@@ -138,9 +144,9 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 | Aspect | Detail |
 |---|---|
 | Role | Controls pool motor speed, current generation, and reads physical button inputs |
-| Communication | Receives commands and sends telemetry via MQTT, Modbus TCP, or HTTP |
+| Communication | Connected to EDGE Server via **wired Ethernet**; receives commands and sends telemetry via MQTT, Modbus TCP, or HTTP |
 | Physical Interface | In-pool air buttons (START, STOP, SLOW, FAST) operate independently of the tablet |
-| Keep-Alive | Maintains heartbeat with the EDGE Server; triggers safety STOP if connection is lost |
+| Keep-Alive | Maintains heartbeat with the EDGE Server over Ethernet; triggers safety STOP if connection is lost |
 
 #### 2.2.4 Web Browser Access (Optional)
 
@@ -154,26 +160,27 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 ### 2.3 Communication Topology
 
 ```
-                    ┌─────────────┐
-                    │  EDGE       │
-                    │  Server     │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-         ┌────┴────┐  ┌───┴────┐  ┌────┴─────┐
-         │ Android │  │ Web    │  │ PLC /    │
-         │ Kiosk   │  │ Browser│  │ Controller│
-         │ Client  │  │ (View) │  │          │
-         └─────────┘  └────────┘  └──────────┘
-              │                        ▲
-              │    Direct Bluetooth     │
-              └────────────────────────┘
+         Wi-Fi (primary)              Wired Ethernet
+         Bluetooth (future)           (permanent link)
+              │                            │
+         ┌────┴────┐                  ┌────┴─────┐
+         │ Android │    ┌──────────┐  │ PLC /    │
+         │ Kiosk   │◄──►  EDGE    │══► Controller│
+         │ Client  │    │  Server  │◄══          │
+         └─────────┘    └────┬─────┘  └──────────┘
+                             │
+         ┌───────────┐       │ Wi-Fi
+         │ Web       │◄──────┘
+         │ Browser   │
+         │ (View)    │
+         └───────────┘
 ```
 
-**Connection paths to PLC:**
-1. **Server-mediated (primary):** Client → Server → PLC (via Wi-Fi network, MQTT/Modbus TCP/HTTP).
-2. **Direct Bluetooth:** Client → PLC (Bluetooth, for scenarios where both are in close proximity).
+**Connection architecture:**
+- **Server ↔ PLC: Wired Ethernet (always).** The EDGE Server connects to the PLC via a dedicated Ethernet cable. This link carries all MQTT, Modbus TCP, and HTTP traffic. It is the only path for PLC communication.
+- **Client ↔ Server: Wi-Fi (primary).** The Android kiosk client connects to the EDGE Server over the local Wi-Fi network. All user commands flow from client → server → PLC, and all PLC telemetry flows from PLC → server → client.
+- **Client ↔ Server: Bluetooth (future addon).** A planned enhancement will allow the tablet to connect to the EDGE Server via Bluetooth as an alternative to Wi-Fi, for scenarios where Wi-Fi is impractical. This will provide the same server-mediated path to the PLC.
+- **Client ↔ PLC: Never direct.** The client has no direct communication path to the PLC. The EDGE Server is always the intermediary.
 
 ---
 
@@ -327,14 +334,16 @@ The Administration Panel is a set of protected pages within the EDGE web applica
 | DHCP Range | Configure IP address allocation for connected devices |
 | Network Diagnostics | View connected clients, signal strength, and latency metrics |
 
-#### 6.2.2 Bluetooth Configuration
+#### 6.2.2 Bluetooth Configuration (Future Addon)
+
+> **Note:** Bluetooth support for server-to-client communication is a planned future feature. The configuration UI will be present but disabled until the Bluetooth module is implemented.
 
 | Setting | Description |
 |---|---|
-| Bluetooth Enable/Disable | Toggle Bluetooth communication on the server or client |
-| Device Pairing | Pair with PLC/controller Bluetooth modules |
+| Bluetooth Enable/Disable | Toggle Bluetooth communication between server and client |
+| Device Pairing | Pair server with Android tablet(s) over Bluetooth |
 | Preferred Connection | Set priority: Wi-Fi first with Bluetooth fallback, or Bluetooth-only |
-| Connection Status | Real-time view of Bluetooth link quality and connected devices |
+| Connection Status | Real-time view of Bluetooth link quality and paired devices |
 
 #### 6.2.3 Tablet MAC Address Registration
 
@@ -402,7 +411,7 @@ The EDGE Server includes an **embedded MQTT broker** as the primary communicatio
 | Protocol | MQTT v3.1.1 / v5.0 |
 | Default Port | 1883 (plaintext), 8883 (TLS) |
 | Hosting | Runs as an integrated service within the EDGE Server process |
-| Clients | EDGE Server (internal), PLC controller, Android kiosk client (for direct status subscriptions) |
+| Clients | EDGE Server (internal), PLC controller (over Ethernet) |
 | Topics | Hierarchical: `swimex/{pool_id}/command/*`, `swimex/{pool_id}/status/*`, `swimex/{pool_id}/keepalive` |
 | QoS | Configurable per topic; QoS 1 (at-least-once) recommended for commands; QoS 0 for telemetry |
 | Retained Messages | Used for current-state topics (speed, mode) so new subscribers get immediate state |
@@ -417,26 +426,40 @@ The EDGE Server includes an **embedded MQTT broker** as the primary communicatio
 
 ### 7.3 Connection Paths
 
-#### 7.3.1 Wi-Fi Communication
+#### 7.3.1 Server ↔ PLC: Wired Ethernet (Permanent)
 
 ```
-EDGE Client ──Wi-Fi──► EDGE Server ──Wi-Fi──► PLC
-                        (MQTT Broker)
+EDGE Server ══ Ethernet ══► PLC Controller
+              (MQTT / Modbus TCP / HTTP)
 ```
 
-- Primary communication path.
-- All data flows through the EDGE Server's MQTT broker.
-- The server translates between MQTT topics and whatever protocol the PLC uses (Modbus TCP, HTTP, or native MQTT).
+- The **only** path between the EDGE system and the PLC.
+- Wired Ethernet provides deterministic, low-latency, reliable connectivity.
+- The server translates between its internal MQTT topics and whatever protocol the PLC uses (Modbus TCP, HTTP, or native MQTT).
+- Keep-alive heartbeat runs over this Ethernet link.
 
-#### 7.3.2 Bluetooth Communication
+#### 7.3.2 Client ↔ Server: Wi-Fi (Primary)
 
 ```
-EDGE Client ──Bluetooth──► PLC (Direct)
+EDGE Client ── Wi-Fi ──► EDGE Server ══ Ethernet ══► PLC
+              (HTTP / WebSocket)       (MQTT / Modbus TCP / HTTP)
 ```
 
-- Secondary/fallback path for close-proximity control.
-- Used when Wi-Fi is unavailable or for installations where Bluetooth is preferred.
-- The Android kiosk client communicates directly with the PLC's Bluetooth module.
+- Primary communication path between the tablet and server.
+- All user commands flow: Client → (Wi-Fi) → Server → (Ethernet) → PLC.
+- All PLC telemetry flows: PLC → (Ethernet) → Server → (Wi-Fi) → Client.
+- The client is a thin presentation layer — it renders the UI and forwards user actions to the server via HTTP/WebSocket.
+
+#### 7.3.3 Client ↔ Server: Bluetooth (Future Addon)
+
+```
+EDGE Client ── Bluetooth ──► EDGE Server ══ Ethernet ══► PLC
+```
+
+- **Planned future enhancement** — not available in initial release.
+- Will provide an alternative wireless link between the tablet and the EDGE Server when Wi-Fi is impractical.
+- The data flow remains identical: all traffic still routes through the server to the PLC over Ethernet.
+- The client will never communicate directly with the PLC, even over Bluetooth.
 
 ### 7.4 Keep-Alive & Safety Stop
 
@@ -444,12 +467,25 @@ A heartbeat mechanism ensures continuous, verified connectivity between the EDGE
 
 **Keep-Alive Protocol:**
 
+The keep-alive heartbeat operates on **two segments** of the communication chain:
+
+**Segment 1 — Server ↔ PLC (Ethernet):**
 ```
 ┌──────────┐    Heartbeat (every N seconds)    ┌──────────┐
-│  EDGE    │ ──────────────────────────────────►│  PLC     │
+│  EDGE    │ ═══════════ Ethernet ════════════►│  PLC     │
 │  Server  │                                    │          │
-│  or      │ ◄──────────────────────────────── │          │
-│  Client  │    Heartbeat ACK                   │          │
+│          │ ◄═══════════ Ethernet ════════════ │          │
+│          │    Heartbeat ACK                   │          │
+└──────────┘                                    └──────────┘
+```
+
+**Segment 2 — Client ↔ Server (Wi-Fi):**
+```
+┌──────────┐    Heartbeat (every N seconds)    ┌──────────┐
+│  EDGE    │ ─────────── Wi-Fi ───────────────►│  EDGE    │
+│  Client  │                                    │  Server  │
+│          │ ◄─────────── Wi-Fi ─────────────── │          │
+│          │    Heartbeat ACK                   │          │
 └──────────┘                                    └──────────┘
 ```
 
@@ -461,11 +497,11 @@ A heartbeat mechanism ensures continuous, verified connectivity between the EDGE
 | Recovery | When heartbeat resumes, PLC remains in STOP until an explicit START command is issued |
 
 **Triggers for Safety Stop:**
-- Wi-Fi disconnection between server and PLC.
-- Bluetooth disconnection between client and PLC.
-- EDGE Server process crash or shutdown.
-- Tablet moves out of Wi-Fi/Bluetooth range.
-- Network congestion causing heartbeat timeouts.
+- Ethernet disconnection between server and PLC (cable unplugged, switch failure).
+- EDGE Server process crash or shutdown (PLC loses heartbeat from server).
+- Wi-Fi disconnection between client and server (server detects loss of client; depending on configuration, may trigger PLC stop if no other active client is connected).
+- Tablet moves out of Wi-Fi range (same as Wi-Fi disconnection).
+- Network congestion or hardware failure causing heartbeat timeouts on either segment.
 
 **Safety Stop Behavior:**
 1. PLC halts the pool motor immediately upon heartbeat timeout.
@@ -687,7 +723,7 @@ Interval Program
 | Requirement | Specification |
 |---|---|
 | Dual-Input Safety | Both tablet and physical air buttons can stop the pool at any time |
-| Keep-Alive Failsafe | PLC enters SAFETY STOP if heartbeat is lost (Wi-Fi or Bluetooth disconnect) |
+| Keep-Alive Failsafe | PLC enters SAFETY STOP if Ethernet heartbeat from server is lost; server can also trigger stop if client Wi-Fi heartbeat is lost |
 | No Auto-Resume | After safety stop, pool does not restart without explicit human action |
 | Failsafe on Disconnect | Physical air buttons remain operational regardless of tablet/server state |
 | State Reset | Screen returns to default settings after any stop action |
@@ -710,7 +746,7 @@ Interval Program
 | Requirement | Specification |
 |---|---|
 | Operating Conditions | Pool-side (humid, splash-prone environment) |
-| Network | Closed local Wi-Fi and/or Bluetooth; no internet dependency |
+| Network | Wired Ethernet (server ↔ PLC), Wi-Fi (client ↔ server); closed local network, no internet dependency |
 | Time Sync | Manual configuration recommended; server can act as local NTP source |
 | Edge Device | Linux or Windows machine (small form factor, fanless recommended) |
 
@@ -1032,35 +1068,31 @@ All workout modes converge to a shared execution screen that:
 - Provides START to begin (if not yet started).
 - Offers two start methods: tablet START button or physical in-pool START button.
 - Shows real-time updates as the workout progresses through steps/sets.
-- Displays connection status indicator (Wi-Fi/Bluetooth signal strength).
-- Shows SAFETY STOP alert if heartbeat is lost.
+- Displays connection status indicator (Wi-Fi signal strength to server, server-to-PLC Ethernet link status).
+- Shows SAFETY STOP alert if heartbeat is lost on either communication segment.
 
 ---
 
 ## 14. Integration Points
 
-### 14.1 EDGE Server ↔ PLC
+### 14.1 EDGE Server ↔ PLC (Wired Ethernet)
 
-| Direction | Protocol Options | Data |
-|---|---|---|
-| Server → PLC | MQTT Publish / Modbus Write / HTTP POST | Start, Stop, Pause, Speed Set, Program Load |
-| PLC → Server | MQTT Publish / Modbus Read / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
-| Bidirectional | MQTT Keep-Alive | Heartbeat ping/ack for safety stop mechanism |
+| Direction | Transport | Protocol Options | Data |
+|---|---|---|---|
+| Server → PLC | Ethernet | MQTT Publish / Modbus Write / HTTP POST | Start, Stop, Pause, Speed Set, Program Load |
+| PLC → Server | Ethernet | MQTT Publish / Modbus Read / HTTP GET | Current Speed, Elapsed Time, Workout State, Motor Temp, Fault Codes |
+| Bidirectional | Ethernet | MQTT Keep-Alive | Heartbeat ping/ack for safety stop mechanism |
 
-### 14.2 EDGE Client ↔ EDGE Server
-
-| Direction | Transport | Data |
-|---|---|---|
-| Client → Server | HTTP REST / WebSocket | User commands, authentication requests, program CRUD |
-| Server → Client | WebSocket / Server-Sent Events | Real-time status updates, speed/time, connection state |
-| Client → Server | HTTP | Workout session logging, usage tracking |
-
-### 14.3 EDGE Client ↔ PLC (Bluetooth Direct)
+### 14.2 EDGE Client ↔ EDGE Server (Wi-Fi; Bluetooth Future)
 
 | Direction | Transport | Data |
 |---|---|---|
-| Client → PLC | Bluetooth Serial/BLE | Start, Stop, Speed commands |
-| PLC → Client | Bluetooth Serial/BLE | Status telemetry, heartbeat ACK |
+| Client → Server | Wi-Fi: HTTP REST / WebSocket | User commands, authentication requests, program CRUD |
+| Server → Client | Wi-Fi: WebSocket / Server-Sent Events | Real-time status updates, speed/time, PLC connection state |
+| Client → Server | Wi-Fi: HTTP | Workout session logging, usage tracking |
+| Bidirectional | Wi-Fi: WebSocket | Client ↔ Server keep-alive heartbeat |
+
+> **Future:** Bluetooth will provide an alternative transport for the same client ↔ server data flows listed above. The data model and API contracts remain identical — only the transport layer changes.
 
 ### 14.4 Physical Air Buttons ↔ PLC
 
@@ -1073,7 +1105,7 @@ All workout modes converge to a shared execution screen that:
 
 ### 14.5 Concurrent Control
 
-The tablet, web browsers, and air buttons operate as parallel input sources. The EDGE Server arbitrates conflicting commands (e.g., tablet says START while air button says STOP — STOP always wins for safety). All state changes from any source are broadcast to all connected clients in real time.
+The tablet, web browsers, and air buttons operate as parallel input sources. The EDGE Server is the **single point of arbitration** — it receives commands from all sources (client over Wi-Fi, browser over Wi-Fi, air buttons via PLC over Ethernet) and resolves conflicts. STOP always wins for safety. All state changes from any source are broadcast to all connected clients in real time.
 
 ---
 
@@ -1084,7 +1116,7 @@ The tablet, web browsers, and air buttons operate as parallel input sources. The
 | Unauthorized Pool Control | MAC address registration required for write access; unregistered devices are view-only |
 | Unauthorized System Access | Role-based access control; all auth managed server-side |
 | Kiosk Bypass | Android device lockdown via kiosk mode; exit requires admin/maintenance login |
-| Network Security | Closed local Wi-Fi AP; no internet exposure; optional TLS for MQTT |
+| Network Security | Wired Ethernet for PLC link (physically secure); closed local Wi-Fi for client access; no internet exposure; optional TLS for MQTT |
 | Credential Storage | Passwords hashed server-side (bcrypt/argon2); never stored on client |
 | Session Hijacking | Token-based sessions with expiry; HTTPS between client and server |
 | Physical Safety | STOP always wins in command conflicts; safety stop on disconnect; air buttons always functional |
@@ -1105,10 +1137,10 @@ The tablet, web browsers, and air buttons operate as parallel input sources. The
 | Windows | `.msi` / `.exe` installer | Web server, MQTT broker, database, Windows Service registration |
 
 **Installation steps (native):**
-1. Run the installer on the edge device.
-2. Installer prompts for: network interface, MQTT port, admin username/password (first-run).
+1. Run the installer on the edge device (must have both Ethernet and Wi-Fi network interfaces).
+2. Installer prompts for: Ethernet interface (PLC-facing), Wi-Fi interface (client-facing), MQTT port, admin username/password (first-run).
 3. Service is registered and started automatically.
-4. Admin opens `http://<server-ip>:<port>` from any browser to complete setup wizard.
+4. Admin opens `http://<server-ip>:<port>` from any browser on the Wi-Fi network to complete setup wizard.
 
 #### 16.1.2 Docker Image
 
@@ -1119,7 +1151,8 @@ swimex/edge-server:latest
 | Aspect | Detail |
 |---|---|
 | Base Image | Alpine Linux (minimal footprint) |
-| Exposed Ports | 80/443 (HTTP/HTTPS), 1883/8883 (MQTT), 502 (Modbus TCP proxy, optional) |
+| Exposed Ports | 80/443 (HTTP/HTTPS for web UI), 1883/8883 (MQTT broker), 502 (Modbus TCP to PLC, optional passthrough) |
+| Network | Requires access to both the Wi-Fi network (client-facing) and the Ethernet network (PLC-facing); dual-NIC or VLAN recommended |
 | Volumes | `/data` for persistent database, `/config` for configuration files |
 | Environment Variables | `ADMIN_USER`, `ADMIN_PASS`, `MQTT_PORT`, `HTTP_PORT`, `TLS_CERT`, `TLS_KEY` |
 | Compose Support | `docker-compose.yml` included for one-command startup |
@@ -1153,8 +1186,8 @@ volumes:
 |---|---|
 | Package | `.apk` installer (sideloaded or via MDM) |
 | Minimum Android | Android 8.0 (API 26) |
-| Permissions | Device Admin, Draw Over Apps, System Alert Window, Bluetooth, Wi-Fi, Boot Completed |
-| First-Run Config | Server URL/IP, optional Bluetooth pairing |
+| Permissions | Device Admin, Draw Over Apps, System Alert Window, Wi-Fi, Boot Completed (Bluetooth permission reserved for future addon) |
+| First-Run Config | Server URL/IP, Wi-Fi network selection |
 
 **Installation steps:**
 1. Enable "Install from Unknown Sources" on the Android tablet.
@@ -1171,17 +1204,21 @@ Both server and client include a guided first-run configuration wizard:
 
 **Server Wizard:**
 1. Set admin credentials.
-2. Configure network interface and ports.
-3. Configure MQTT broker settings.
-4. (Optional) Import existing configuration backup.
-5. (Optional) Register initial tablet MAC addresses.
+2. Configure Ethernet interface for PLC connection (IP address, subnet, gateway).
+3. Configure Wi-Fi interface / AP settings for client-facing network.
+4. Configure MQTT broker settings (ports, TLS, credentials).
+5. Set PLC communication protocol and connection parameters (Modbus TCP address, MQTT topics, or HTTP endpoint).
+6. (Optional) Import existing configuration backup.
+7. (Optional) Register initial tablet MAC addresses.
 
 **Client Wizard:**
-1. Enter EDGE Server address.
-2. Test connectivity.
-3. (Optional) Configure Bluetooth pairing.
+1. Select Wi-Fi network and enter credentials.
+2. Enter EDGE Server address (IP or hostname).
+3. Test connectivity to server.
 4. Confirm kiosk mode activation.
 5. Device reboots into kiosk mode.
+
+> **Future:** When Bluetooth support is added, the client wizard will include an optional Bluetooth pairing step as an alternative connection method to the server.
 
 ### 16.4 Web Browser Access
 
@@ -1203,8 +1240,8 @@ Both server and client include a guided first-run configuration wizard:
 | **PLC** | Programmable Logic Controller — the embedded controller managing pool motor and physical I/O |
 | **Kiosk Mode** | Android device lockdown mode that restricts the tablet to only the EDGE application |
 | **Air Buttons** | Pneumatic buttons installed in the pool wall; waterproof physical controls |
-| **PoolCtrl** | Default Wi-Fi SSID for the local network connecting the EDGE system to the PLC |
-| **Keep-Alive** | Periodic heartbeat between the EDGE system and PLC to verify connectivity |
+| **PoolCtrl** | Default Wi-Fi SSID for the local network connecting the EDGE Client (tablet) to the EDGE Server |
+| **Keep-Alive** | Periodic heartbeat on two segments: server ↔ PLC (Ethernet) and client ↔ server (Wi-Fi) to verify end-to-end connectivity |
 | **Safety Stop** | Automatic pool motor halt triggered when the keep-alive heartbeat is lost |
 | **MAC Registration** | Server-side registry of authorized tablet hardware addresses; controls write access |
 | **Object-Tag Mapping** | Binding between a UI widget and a PLC data point (register, topic, or endpoint) |
@@ -1229,3 +1266,4 @@ Both server and client include a guided first-run configuration wizard:
 |---|---|---|---|
 | 1.0 | 2026-02-22 | System Design & Engineering | Initial project description derived from EDGE Operation Instructions v1 |
 | 2.0 | 2026-02-22 | System Design & Engineering | Major expansion: two-tier architecture (server + kiosk client), authentication & RBAC, kiosk mode, admin panel, MQTT broker, multi-protocol PLC communication, keep-alive safety stop, drag-and-drop UI builder, 5 templates, light/dark mode, MAC registration, user profiles & usage tracking, Docker deployment, installer packages, web browser access |
+| 2.1 | 2026-02-22 | System Design & Engineering | Connectivity model correction: Server ↔ PLC is wired Ethernet only (not wireless); Client ↔ Server is Wi-Fi primary with Bluetooth as future addon; client never communicates directly with PLC; two-segment keep-alive (Ethernet + Wi-Fi); updated architecture diagrams, connection paths, integration points, deployment wizards, and glossary |
