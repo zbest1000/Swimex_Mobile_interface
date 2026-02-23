@@ -1,6 +1,6 @@
 # SwimEx EDGE Touch Screen Monitor — Project Description
 
-**Document Version:** 2.2
+**Document Version:** 2.3
 **Based on:** EDGE Operation Instructions v1 (02/01/2023)
 **System Type:** Two-Tier Embedded Pool Control Platform (Edge Server + Android Kiosk Client)
 
@@ -15,7 +15,7 @@
 5. [User Accounts, Profiles & Usage Tracking](#5-user-accounts-profiles--usage-tracking)
 6. [Administration Panel](#6-administration-panel)
 7. [Communication Layer](#7-communication-layer)
-8. [UI Builder & Theming](#8-ui-builder--theming)
+8. [Graphics, UI Builder & Theming](#8-graphics-ui-builder--theming)
 9. [Workout Modes (Functional Requirements)](#9-workout-modes-functional-requirements)
 10. [Navigation & UI Conventions](#10-navigation--ui-conventions)
 11. [Non-Functional Requirements](#11-non-functional-requirements)
@@ -45,7 +45,7 @@ SwimEx manufactures aquatic therapy and fitness pools that generate an adjustabl
 - Replacing legacy single-purpose controllers with a rich, programmable touch interface.
 - Offering user accounts with profile persistence and workout history tracking.
 - Providing administrator-level system configuration (networking, device registration, communication mapping).
-- Supporting drag-and-drop UI customization with 5 built-in templates.
+- Supporting modern SVG-based graphics with import, built-in editor, data-driven animation, drag-and-drop UI builder, and 5 built-in templates.
 - Enabling multi-protocol PLC communication (MQTT, Modbus TCP, HTTP) over wired Ethernet with automatic safety stop on disconnect.
 
 ### 1.2 Key Stakeholders
@@ -525,50 +525,254 @@ The keep-alive heartbeat operates on **two segments** of the communication chain
 
 ---
 
-## 8. UI Builder & Theming
+## 8. Graphics, UI Builder & Theming
 
-### 8.1 Drag-and-Drop UI Builder
+The EDGE platform uses **modern, web-native vector graphics** as the foundation for all visual elements. Graphics are primarily SVG-based, rendered via the browser's native SVG/Canvas engine, and are fully animatable and data-driven. The system supports importing external graphics, building custom graphics from scratch, and binding any visual property to live PLC data for real-time animation.
 
-Available to **Administrator** and **Maintenance** roles, the UI builder allows visual customization of the EDGE interface.
+### 8.1 Graphics Architecture
+
+#### 8.1.1 Rendering Technology
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Vector Graphics** | SVG (Scalable Vector Graphics) | Primary format for all UI widgets, gauges, pool diagrams, icons, and custom graphics. Resolution-independent, animatable, styleable via CSS |
+| **Canvas Rendering** | HTML5 Canvas (2D context) | Used for high-frequency data visualization: real-time charts, waveforms, speed traces |
+| **CSS Animations** | CSS Transitions + Keyframes | Smooth state transitions: color changes, visibility toggles, opacity fades, position shifts |
+| **JavaScript Animation** | requestAnimationFrame / Web Animations API | Complex, data-driven animations: rotation, fill level, path morphing, multi-property interpolation |
+| **Raster Support** | PNG, JPEG, WebP, GIF | Imported raster images (photos, logos, backgrounds) displayed alongside vector elements |
+
+#### 8.1.2 Design Principles
+
+- **SVG-first:** All built-in widgets and templates are authored as SVG. This ensures crisp rendering at any zoom level, smooth animation, and small file sizes.
+- **Data-driven:** Every visual property (color, rotation, fill, position, visibility, opacity, scale, text content) can be bound to a PLC tag value, enabling graphics that react to live process data in real time.
+- **Touch-optimized:** All interactive graphic elements meet minimum 48x48dp touch targets for wet-finger pool-side operation.
+- **Themeable:** Graphics inherit light/dark mode tokens and adapt automatically when the user toggles themes.
+- **Performant:** GPU-accelerated CSS transforms for animations; requestAnimationFrame scheduling ensures 60fps on tablet hardware.
+
+### 8.2 Graphic Import
+
+Administrators and Maintenance users can import external graphics into the EDGE system.
+
+#### 8.2.1 Supported Import Formats
+
+| Format | Type | Animation Support | Notes |
+|---|---|---|---|
+| **SVG** | Vector | Full — all elements animatable after import | Preferred format; internal structure preserved for per-element binding |
+| **PNG** | Raster | Graphic-level only (rotation, scale, opacity, visibility) | Transparency supported |
+| **JPEG** | Raster | Graphic-level only | Best for photos/backgrounds |
+| **WebP** | Raster | Graphic-level only | Modern compressed format |
+| **GIF** | Raster (animated) | Native frame animation plays as-is; also supports graphic-level animation | Useful for simple pre-built animations |
+| **DXF** | CAD Vector | Converted to SVG on import; then fully animatable | For importing pool/equipment drawings from CAD software |
+
+#### 8.2.2 Import Workflow
+
+1. Navigate to **UI Builder → Graphic Library → Import**.
+2. Upload one or more files (drag-and-drop onto browser or file picker).
+3. System validates the file, generates a preview thumbnail, and extracts metadata.
+4. For **SVG files**: the importer parses the SVG DOM and lists all named elements (layers, groups, paths) that can be individually targeted for animation and tag binding.
+5. For **raster files**: the graphic is treated as a single unit (whole-image animation only).
+6. Imported graphics are stored in the server's **Graphic Library** and are available to all layouts.
+
+#### 8.2.3 Graphic Library
 
 | Feature | Description |
 |---|---|
-| Object Palette | Library of draggable UI widgets: buttons, sliders, gauges, numeric displays, timers, charts, labels, images |
-| Canvas | WYSIWYG editor representing the tablet screen; objects are placed by drag-and-drop |
-| Property Inspector | Configure each object's properties: size, color, label, tag binding, behavior, animation |
-| Tag Binding | Each object can be bound to a PLC tag (configured via the admin object-to-tag mapping) |
-| Layout Grid | Snap-to-grid alignment for consistent layouts |
-| Responsive Preview | Preview how the layout renders on different screen sizes |
-| Undo/Redo | Full undo/redo stack for editing sessions |
-| Save/Publish | Save drafts; publish to make the layout live for all users |
+| Centralized Storage | All imported and built-in graphics stored server-side; available across all layouts and templates |
+| Categorization | Graphics organized by tags/categories (e.g., "Pools", "Gauges", "Icons", "Equipment", "Backgrounds") |
+| Search | Full-text search by name, tag, or category |
+| Thumbnail Preview | Auto-generated previews for quick browsing |
+| Versioning | Track revisions; revert to previous versions of a graphic |
+| Usage Tracking | Shows which layouts reference each graphic; prevents accidental deletion of in-use assets |
+| Bulk Import/Export | Import/export graphic packs as ZIP archives for backup or transfer between installations |
 
-### 8.2 Pre-Built Templates
+### 8.3 Graphic Builder (Built-in Editor)
 
-Five professionally designed templates ship with the application, each with a distinct visual style:
+The EDGE system includes a **built-in vector graphic editor** that allows administrators and maintenance users to create and modify SVG graphics directly within the application — no external tools required.
+
+#### 8.3.1 Drawing Tools
+
+| Tool | Description |
+|---|---|
+| **Rectangle / Rounded Rect** | Draw rectangular shapes with configurable corner radius |
+| **Circle / Ellipse** | Draw circular and elliptical shapes |
+| **Line / Polyline** | Draw straight lines and multi-segment polylines |
+| **Polygon** | Draw closed multi-sided shapes |
+| **Arc / Pie** | Draw arc segments and pie/donut chart shapes |
+| **Path (Pen Tool)** | Freeform Bezier curve drawing for complex shapes |
+| **Text** | Add text labels with configurable font, size, weight, and alignment |
+| **Image Embed** | Place imported raster images within an SVG composition |
+| **Group** | Group multiple elements for collective manipulation and animation |
+| **Symbol / Component** | Define reusable graphic components (e.g., a valve symbol) that can be instantiated multiple times |
+
+#### 8.3.2 Styling Properties
+
+Every graphic element supports the following visual properties, all of which can be set statically or bound to PLC tag values for dynamic behavior:
+
+| Property | Description | Bindable to Tag |
+|---|---|---|
+| **Fill Color** | Interior color (solid, linear gradient, radial gradient) | Yes — color changes based on value (e.g., green when OK, red on alarm) |
+| **Fill Level** | Partial fill from 0–100% (for tank/level indicators) | Yes — fill height/width driven by a tag percentage value |
+| **Stroke Color** | Outline/border color | Yes |
+| **Stroke Width** | Outline thickness | Yes |
+| **Opacity** | Transparency from 0% (invisible) to 100% (fully opaque) | Yes — fade in/out based on state |
+| **Visibility** | Show or hide the element entirely | Yes — toggle based on boolean tag |
+| **Rotation** | Rotate around a configurable pivot point (0–360°) | Yes — continuous rotation (e.g., spinning motor) or position-based (e.g., dial needle) |
+| **Scale X / Scale Y** | Horizontal and vertical scaling | Yes — grow/shrink based on value |
+| **Position X / Position Y** | Absolute or relative positioning on the canvas | Yes — move elements based on value (e.g., slider thumb) |
+| **Text Content** | Dynamic text display | Yes — show live numeric values, status strings, formatted timestamps |
+| **Font Size** | Text size | Yes |
+| **Border Radius** | Corner rounding | No (static only) |
+| **Shadow / Glow** | Drop shadow or outer glow effects | Yes — activate on alarm/highlight states |
+| **Clip Path** | Mask/clipping region for partial reveals | Yes — animate clip region for fill/wipe effects |
+| **CSS Class** | Assign CSS classes for theme integration | No (static, but class styles respond to light/dark mode) |
+
+### 8.4 Animation System
+
+The animation system is the core mechanism that makes graphics **react to live PLC data**. Any visual property listed above can be driven by a tag value in real time.
+
+#### 8.4.1 Animation Binding Model
+
+Each animation binding connects a **PLC tag value** to a **graphic property** through a configurable **mapping function**:
+
+```
+┌──────────┐     ┌─────────────────┐     ┌──────────────────┐     ┌────────────────┐
+│ PLC Tag  │────►│ Mapping Function │────►│ Graphic Property │────►│ Visual Output  │
+│ (value)  │     │ (transform)      │     │ (rotation, fill, │     │ (rendered SVG) │
+└──────────┘     └─────────────────┘     │  color, etc.)    │     └────────────────┘
+                                          └──────────────────┘
+```
+
+#### 8.4.2 Mapping Function Types
+
+| Function Type | Description | Example |
+|---|---|---|
+| **Linear Scale** | Maps an input range [min, max] to an output range [min, max] | Tag 0–100% → Rotation 0–270° (gauge needle) |
+| **Threshold / Discrete** | Maps value ranges to discrete states | Tag < 50 → Green fill; 50–80 → Yellow; > 80 → Red |
+| **Boolean Toggle** | Maps true/false (or 0/1) to two states | Tag = 1 → Visible; Tag = 0 → Hidden |
+| **Color Gradient** | Interpolates between two or more colors based on value | Tag 0–100 → Blue (cold) to Red (hot) |
+| **String Format** | Formats a numeric value into a display string | Tag 72.5 → "72.5 %" or "72.5 GPM" |
+| **Expression** | Custom JavaScript-like expression for complex transforms | `tag_value * 3.6 + offset` → Rotation |
+| **Lookup Table** | Maps specific input values to specific outputs | Tag 0 → "Off", 1 → "Idle", 2 → "Running", 3 → "Fault" |
+| **Clamp** | Constrains output to a safe range regardless of input | Rotation clamped to 0–360° even if tag exceeds expected range |
+
+#### 8.4.3 Animation Types
+
+| Animation | Driven By | Property | Example Use Case |
+|---|---|---|---|
+| **Rotation** | Continuous value (0–N) | `transform: rotate()` | Motor spinning indicator, gauge needle, compass |
+| **Fill Level** | Percentage (0–100) | `clip-path` or `height` | Tank level, progress bar, battery indicator |
+| **Color Change** | Threshold or gradient | `fill`, `stroke`, `background` | Alarm state (green/yellow/red), temperature heatmap |
+| **Visibility Toggle** | Boolean | `display` or `visibility` | Show/hide alarm icons, conditional UI sections |
+| **Opacity Fade** | Value or boolean | `opacity` | Fade in active elements, dim inactive elements |
+| **Position Shift** | Numeric value | `transform: translate()` | Slider thumb, flow indicator, scroll position |
+| **Scale Pulse** | Boolean or threshold | `transform: scale()` | Pulsing alarm indicator, attention-grabbing highlight |
+| **Text Update** | Any value | `textContent` | Live speed readout, timer display, status label |
+| **Stroke Dash** | Value | `stroke-dashoffset` | Animated progress ring, flow direction indicator |
+| **Path Morph** | Discrete states | SVG path `d` attribute | Shape transitions between states (e.g., play → pause icon) |
+| **Blink / Flash** | Boolean (alarm) | CSS `animation` (keyframes) | Critical alarm flashing, connection lost warning |
+| **Multi-Property** | Value + expression | Any combination | Simultaneously rotate a needle, update a numeric readout, and change a color — all from one tag |
+
+#### 8.4.4 Animation Timing
+
+| Setting | Description | Default |
+|---|---|---|
+| Update Rate | How frequently the graphic re-renders from tag data | Matches MQTT/polling interval (typically 100–500ms) |
+| Transition Duration | Smoothing time for value changes (prevents jumpy visuals) | 200ms (configurable per binding) |
+| Easing Function | Interpolation curve (linear, ease-in, ease-out, ease-in-out, spring) | `ease-out` |
+| Debounce | Minimum interval between visual updates for a single binding | 50ms |
+| Frame Rate Cap | Maximum render FPS to conserve tablet battery/CPU | 60fps (configurable down to 15fps) |
+
+#### 8.4.5 Animation Configuration UI
+
+The animation system is configured through the **Property Inspector** in the UI Builder:
+
+1. Select a graphic element on the canvas.
+2. Open the **Animations** tab in the Property Inspector.
+3. Click **+ Add Animation** to create a new binding.
+4. Select the **target property** (rotation, fill, color, visibility, etc.).
+5. Select the **source PLC tag** from the tag browser (or type the tag address).
+6. Choose the **mapping function** (linear scale, threshold, boolean, etc.).
+7. Configure mapping parameters (input range, output range, thresholds, colors).
+8. Preview the animation with a **live simulation slider** that mimics tag value changes.
+9. Save — the animation is immediately active in the published layout.
+
+### 8.5 Drag-and-Drop UI Builder
+
+Available to **Administrator** and **Maintenance** roles, the UI builder is the primary workspace for composing screens from graphics, widgets, and imported assets.
+
+| Feature | Description |
+|---|---|
+| **Object Palette** | Library of built-in widgets and all graphics from the Graphic Library; drag onto canvas to place |
+| **Canvas (WYSIWYG)** | Zoomable, pannable editing surface representing the tablet screen; grid-aligned placement |
+| **Property Inspector** | Multi-tab panel: **Layout** (position, size), **Style** (colors, fonts), **Data** (tag binding), **Animations** (dynamic properties), **Events** (touch interactions) |
+| **Layer Panel** | Z-order management; reorder, group, lock, and toggle visibility of elements during editing |
+| **Tag Browser** | Sidebar listing all configured PLC tags; drag a tag onto a graphic element to auto-create a binding |
+| **Graphic Library Browser** | Sidebar for browsing, searching, and previewing all imported and built-in graphics |
+| **Symbol Instances** | Place reusable symbols (e.g., a valve graphic) multiple times; each instance can be bound to different tags |
+| **Layout Grid** | Configurable snap-to-grid alignment; toggleable guides and rulers |
+| **Responsive Preview** | Preview how the layout renders on different screen sizes and orientations |
+| **Live Preview** | Real-time preview with live PLC data — see animations running while editing |
+| **Undo/Redo** | Full undo/redo stack for all editing actions |
+| **Copy/Paste** | Copy elements within a layout or across layouts (preserves bindings) |
+| **Save/Publish** | Save drafts without affecting the live layout; publish to push changes to all users |
+| **Version History** | Browse and restore previous versions of any layout |
+
+### 8.6 Built-in Widget Library
+
+The system ships with a comprehensive library of pre-built, animated SVG widgets:
+
+| Category | Widgets |
+|---|---|
+| **Controls** | Button, Toggle Switch, Slider, Knob (rotary), Numeric Input, Dropdown Select |
+| **Indicators** | LED (on/off/color), Status Badge, Alarm Banner, Connection Status Icon |
+| **Gauges** | Radial Gauge (needle), Semi-circular Gauge, Linear Gauge (horizontal/vertical), Arc Gauge |
+| **Levels** | Tank Level (vertical/horizontal fill), Battery Indicator, Progress Bar, Donut Chart |
+| **Charts** | Real-time Line Chart, Bar Chart, Sparkline, Speed Trend, Historical Playback |
+| **Text** | Dynamic Label, Numeric Display (with units), Countdown Timer, Stopwatch, Clock |
+| **Navigation** | Tab Bar, Page Selector, Breadcrumb, Back Button, Home Button |
+| **Layout** | Container/Panel, Card, Divider, Spacer, Tab Container, Accordion |
+| **Pool-Specific** | Pool Diagram (top view, animatable current flow), Swimmer Silhouette, Speed Dial, Workout Step Indicator, Set/Rep Counter |
+| **Media** | Image Container, SVG Container, Video Embed (for instruction videos) |
+
+Each built-in widget:
+- Is authored as an SVG component with clearly named internal elements.
+- Exposes a set of **bindable properties** documented in the widget's spec.
+- Supports light/dark mode via theme tokens.
+- Can be customized (colors, sizes, labels) without editing the SVG source.
+- Can be duplicated and modified to create custom variants.
+
+### 8.7 Pre-Built Templates
+
+Five professionally designed templates ship with the application, each providing a complete screen set (home, workout modes, execution, profile, admin) with consistent styling:
 
 | Template | Visual Style | Best For |
 |---|---|---|
-| **Classic** | Clean, traditional layout matching the original EDGE look | Existing SwimEx installations upgrading to the new system |
-| **Modern** | Flat design with bold colors and large touch targets | General fitness and therapy facilities |
-| **Clinical** | High-contrast, accessibility-focused with large fonts | Medical/rehab environments with older or visually impaired users |
-| **Sport** | Dynamic, energetic design with performance-oriented gauges | Competitive swim training facilities |
-| **Minimal** | Stripped-down interface showing only essential controls | Environments prioritizing simplicity |
+| **Classic** | Clean, traditional layout matching the original EDGE look; solid colors, standard fonts | Existing SwimEx installations upgrading to the new system |
+| **Modern** | Flat material design with bold accent colors, large touch targets, subtle shadows and transitions | General fitness and therapy facilities |
+| **Clinical** | High-contrast, accessibility-focused with large fonts, clear iconography, WCAG AA compliance | Medical/rehab environments with older or visually impaired users |
+| **Sport** | Dynamic, energetic design with performance-oriented gauges, dark backgrounds, neon accents | Competitive swim training facilities |
+| **Minimal** | Stripped-down interface showing only essential controls; maximum whitespace, minimal decoration | Environments prioritizing simplicity |
 
-**Template behavior:**
+**Template internals:**
+- Each template is a collection of SVG-based layouts with pre-configured widget placements and animations.
+- All templates use the same underlying widget library — only styling and arrangement differ.
+- Templates define theme tokens (colors, fonts, spacing, border radii) that propagate to all contained widgets.
 - General users see the template selected by the Administrator.
 - Administrators select the active template from the admin panel.
 - Templates can be further customized via the drag-and-drop builder after selection.
-- Switching templates preserves all tag bindings and functional configuration.
+- Switching templates preserves all tag bindings, animation configurations, and functional logic.
+- Templates can be exported and shared across installations as `.edge-template` packages.
 
-### 8.3 Light & Dark Mode
+### 8.8 Light & Dark Mode
 
 | Aspect | Detail |
 |---|---|
 | Availability | All users (including general/guest) |
 | Toggle Location | Accessible from the main UI header or user profile settings |
 | Persistence | Preference saved per user account; guests get the system default |
-| Scope | Affects all screens — workout, library, settings, execution |
-| Implementation | CSS custom properties / theme tokens; all 5 templates support both modes |
+| Scope | Affects all screens — workout, library, settings, execution, and all custom graphics |
+| Implementation | CSS custom properties / SVG theme tokens; all 5 templates and all built-in widgets support both modes |
+| Custom Graphics | Imported SVGs can reference theme tokens (e.g., `var(--color-primary)`) to automatically adapt to light/dark mode; raster images are unaffected |
 | Default | Configurable by Administrator (system-wide default for new users/guests) |
 
 ---
@@ -936,7 +1140,70 @@ ObjectTagMapping {
 }
 ```
 
-### 12.7 UI Layout Schema
+### 12.7 Graphic Library Schema
+
+```
+GraphicAsset {
+  id:           UUID
+  name:         String
+  category:     String                     // e.g., "Pools", "Gauges", "Icons"
+  tags:         Array<String>              // Searchable labels
+  format:       Enum [SVG, PNG, JPEG, WEBP, GIF, DXF]
+  sourceFile:   Binary                     // Original uploaded file
+  svgContent:   String (nullable)          // Parsed SVG markup (for SVG and DXF-converted files)
+  thumbnail:    Binary                     // Auto-generated preview
+  elements:     Array<GraphicElement>      // Named internal SVG elements (SVG only)
+  isBuiltIn:    Boolean                    // true for shipped widgets, false for user imports
+  version:      Integer
+  createdBy:    UUID (ref: User.id)
+  createdAt:    DateTime
+  updatedAt:    DateTime
+}
+
+GraphicElement {
+  elementId:    String                     // SVG element ID (e.g., "needle", "tank-fill", "label-speed")
+  elementType:  Enum [GROUP, PATH, RECT, CIRCLE, ELLIPSE, TEXT, IMAGE, POLYGON, LINE]
+  displayName:  String                     // Human-friendly name shown in UI builder
+  bindable:     Boolean                    // Whether this element can have animations bound to it
+}
+```
+
+### 12.8 Animation Binding Schema
+
+```
+AnimationBinding {
+  id:             UUID
+  targetElement:  String                   // GraphicElement.elementId within the placed graphic
+  targetProperty: Enum [
+    FILL_COLOR, FILL_LEVEL, STROKE_COLOR, STROKE_WIDTH,
+    OPACITY, VISIBILITY, ROTATION, SCALE_X, SCALE_Y,
+    POSITION_X, POSITION_Y, TEXT_CONTENT, FONT_SIZE,
+    SHADOW, CLIP_PATH, STROKE_DASH, PATH_MORPH, BLINK
+  ]
+  sourceTag:      UUID (ref: ObjectTagMapping.id)
+  mappingType:    Enum [LINEAR_SCALE, THRESHOLD, BOOLEAN_TOGGLE, COLOR_GRADIENT,
+                        STRING_FORMAT, EXPRESSION, LOOKUP_TABLE, CLAMP]
+  mappingConfig:  JSON {
+    inputMin:        Float (nullable)
+    inputMax:        Float (nullable)
+    outputMin:       Float (nullable)
+    outputMax:       Float (nullable)
+    thresholds:      Array<{value: Float, output: Any}> (nullable)
+    colorStops:      Array<{value: Float, color: String}> (nullable)
+    formatString:    String (nullable)       // e.g., "{value} %"
+    expression:      String (nullable)       // e.g., "tag_value * 3.6 + 10"
+    lookupTable:     Map<String, Any> (nullable)
+    clampMin:        Float (nullable)
+    clampMax:        Float (nullable)
+  }
+  transitionMs:   Integer (default: 200)
+  easingFunction: Enum [LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT, SPRING]
+  pivotX:         Float (nullable)          // Rotation pivot point
+  pivotY:         Float (nullable)
+}
+```
+
+### 12.9 UI Layout Schema
 
 ```
 UILayout {
@@ -946,17 +1213,37 @@ UILayout {
   isActive:    Boolean
   createdBy:   UUID (ref: User.id)
   widgets:     Array<WidgetPlacement>
+  version:     Integer
   updatedAt:   DateTime
 }
 
 WidgetPlacement {
-  widgetType: Enum [BUTTON, SLIDER, GAUGE, NUMERIC_DISPLAY, TIMER, CHART, LABEL, IMAGE]
-  x:          Integer  // Grid position
+  id:         UUID
+  graphicId:  UUID (ref: GraphicAsset.id)
+  widgetType: Enum [BUTTON, SLIDER, GAUGE, NUMERIC_DISPLAY, TIMER, CHART, LABEL,
+                    IMAGE, TANK_LEVEL, LED, STATUS_BADGE, POOL_DIAGRAM, CUSTOM_SVG,
+                    CONTAINER, TAB_BAR, TOGGLE, KNOB, ALARM_BANNER, ARC_GAUGE,
+                    SPARKLINE, DONUT_CHART, VIDEO_EMBED]
+  x:          Integer     // Grid position
   y:          Integer
   width:      Integer
   height:     Integer
-  properties: JSON     // Widget-specific config (color, label, tag binding, etc.)
+  zOrder:     Integer     // Layer stacking order
+  rotation:   Float       // Static rotation (0–360)
+  locked:     Boolean     // Prevent accidental editing
+  groupId:    UUID (nullable)  // Parent group for grouped elements
+  properties: JSON        // Widget-specific static config (colors, labels, fonts, etc.)
+  animations: Array<AnimationBinding>  // Dynamic property bindings
   tagMapping: UUID (ref: ObjectTagMapping.id, nullable)
+  events:     Array<EventBinding>      // Touch interaction handlers
+}
+
+EventBinding {
+  eventType:  Enum [TAP, LONG_PRESS, SWIPE, DOUBLE_TAP]
+  action:     Enum [WRITE_TAG, NAVIGATE, TOGGLE_TAG, INCREMENT_TAG, DECREMENT_TAG, SHOW_POPUP]
+  targetTag:  UUID (ref: ObjectTagMapping.id, nullable)
+  writeValue: Any (nullable)
+  targetPage: String (nullable)
 }
 ```
 
@@ -1081,7 +1368,10 @@ Boot → Kiosk Auto-Launch → EDGE Home Screen
 │   ├── Bluetooth Config (only visible if Super Admin has enabled Bluetooth)
 │   ├── Communication Config (MQTT, Modbus TCP, HTTP)
 │   ├── Object-Tag Mapping (drag-and-drop tag assignment)
-│   ├── UI Builder (drag-and-drop layout editor)
+│   ├── Graphic Library (import, browse, categorize, version graphics)
+│   ├── Graphic Builder (built-in SVG editor for creating/editing graphics)
+│   ├── UI Builder (drag-and-drop layout editor with animation binding)
+│   ├── Animation Config (bind graphic properties to PLC tags with mapping functions)
 │   ├── Template Selector (5 built-in + custom)
 │   ├── System Settings (date/time, logging, backup/restore)
 │   └── Exit Kiosk Mode
@@ -1096,7 +1386,9 @@ Boot → Kiosk Auto-Launch → EDGE Home Screen
 │
 ├── [Maintenance Views]
 │   ├── Communication Config
-│   ├── UI Builder
+│   ├── Graphic Library (import, browse)
+│   ├── Graphic Builder (create/edit graphics)
+│   ├── UI Builder (layout editor with animation binding)
 │   ├── Diagnostics (connection logs, error logs)
 │   └── Exit Kiosk Mode
 │
@@ -1305,8 +1597,14 @@ Both server and client include a guided first-run configuration wizard:
 | **Speed (%)** | Pool current intensity as a percentage of maximum motor output |
 | **MQTT** | Message Queuing Telemetry Transport — lightweight pub/sub messaging protocol |
 | **Modbus TCP** | Industrial communication protocol for PLC register read/write over TCP/IP |
-| **Drag-and-Drop Builder** | Visual editor allowing admin/maintenance to customize the UI layout without code |
+| **Graphic Library** | Centralized server-side storage for all imported and built-in SVG/raster graphic assets |
+| **Graphic Builder** | Built-in SVG vector editor for creating and modifying graphics directly within the EDGE application |
+| **Animation Binding** | Configuration that connects a PLC tag value to a graphic property (rotation, fill, color, etc.) through a mapping function |
+| **Mapping Function** | Transform applied between a raw PLC tag value and a visual property output (linear scale, threshold, boolean, color gradient, expression, etc.) |
+| **SVG** | Scalable Vector Graphics — the primary graphic format used throughout EDGE for resolution-independent, animatable UI elements |
+| **Drag-and-Drop Builder** | Visual WYSIWYG editor allowing admin/maintenance to compose screens from widgets and graphics without code |
 | **Template** | Pre-built UI theme/layout (5 ship with the system: Classic, Modern, Clinical, Sport, Minimal) |
+| **Symbol / Component** | Reusable graphic element (e.g., a valve or motor icon) that can be instantiated multiple times with different tag bindings |
 
 ---
 
@@ -1318,3 +1616,4 @@ Both server and client include a guided first-run configuration wizard:
 | 2.0 | 2026-02-22 | System Design & Engineering | Major expansion: two-tier architecture (server + kiosk client), authentication & RBAC, kiosk mode, admin panel, MQTT broker, multi-protocol PLC communication, keep-alive safety stop, drag-and-drop UI builder, 5 templates, light/dark mode, MAC registration, user profiles & usage tracking, Docker deployment, installer packages, web browser access |
 | 2.1 | 2026-02-22 | System Design & Engineering | Connectivity model correction: Server ↔ PLC is wired Ethernet only (not wireless); Client ↔ Server is Wi-Fi primary with Bluetooth as future addon; client never communicates directly with PLC; two-segment keep-alive (Ethernet + Wi-Fi); updated architecture diagrams, connection paths, integration points, deployment wizards, and glossary |
 | 2.2 | 2026-02-22 | System Design & Engineering | Bluetooth reclassified: fully implemented but disabled and hidden by default (not a future feature). New Super Administrator role introduced as the only role that can enable/expose Bluetooth. Added feature flags system, Super Admin panel in UI flow, FeatureFlag data model, updated RBAC to 5 tiers, and updated all Bluetooth references throughout |
+| 2.3 | 2026-02-22 | System Design & Engineering | Major graphics system expansion: SVG-first rendering architecture, graphic import (SVG/PNG/JPEG/WebP/GIF/DXF), built-in vector graphic editor, centralized Graphic Library with versioning, comprehensive animation system with data-driven property bindings (rotation, fill level, color, visibility, opacity, scale, position, text, blink, path morph), 8 mapping function types, animation timing controls, expanded built-in widget library (30+ widget types across 10 categories), pool-specific widgets, event bindings for touch interactions, updated data model (GraphicAsset, GraphicElement, AnimationBinding, EventBinding schemas) |
