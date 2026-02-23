@@ -54,7 +54,7 @@ export function generateToken(payload: TokenPayload): string {
   return jwt.sign(
     { userId: payload.userId, username: payload.username, role: payload.role },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn },
+    { expiresIn: config.jwtExpiresIn as any },
   );
 }
 
