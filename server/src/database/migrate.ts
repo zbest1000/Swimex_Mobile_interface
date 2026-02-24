@@ -171,6 +171,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   is_revoked INTEGER NOT NULL DEFAULT 0
 );
 
+-- System configuration (key-value store for commissioning state, etc.)
+CREATE TABLE IF NOT EXISTS system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);

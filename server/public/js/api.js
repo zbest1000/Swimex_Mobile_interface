@@ -144,17 +144,39 @@ const EdgeAPI = (function () {
       return await request('PUT', '/api/auth/me/preferences', prefs);
     },
 
-    // ---- Commission ----
-    async isCommissioned() {
-      return await request('GET', '/api/commission/status');
+    // ---- System Status & Commissioning ----
+    async getSystemStatus() {
+      return await request('GET', '/api/auth/system-status');
     },
 
-    async commission(data) {
-      return await request('POST', '/api/commission', data);
+    async getCommissionStatus() {
+      return await request('GET', '/api/auth/commission/status');
+    },
+
+    async commissionStep1(swimexCode, bscCode) {
+      return await request('POST', '/api/auth/commission/step1-codes', { swimexCode, bscCode });
+    },
+
+    async commissionStep2(superAdminNewPassword, adminUsername, adminPassword, adminDisplayName) {
+      return await request('POST', '/api/auth/commission/step2-accounts', {
+        superAdminNewPassword, adminUsername, adminPassword, adminDisplayName
+      });
+    },
+
+    async commissionStep3(networkConfig) {
+      return await request('POST', '/api/auth/commission/step3-network', networkConfig);
+    },
+
+    async commissionStep4(plcConfig) {
+      return await request('POST', '/api/auth/commission/step4-plc', plcConfig);
+    },
+
+    async commissionStep5(tabletMacs, template) {
+      return await request('POST', '/api/auth/commission/step5-finalize', { tabletMacs, template });
     },
 
     async resetSuperAdmin(data) {
-      return await request('POST', '/api/commission/reset-super-admin', data);
+      return await request('POST', '/api/auth/reset-super-admin', data);
     },
 
     // ---- Workout Control ----

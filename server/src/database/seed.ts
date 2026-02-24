@@ -1,15 +1,14 @@
 import { getDb } from './connection';
 import { createLogger } from '../utils/logger';
-import { config } from '../utils/config';
 import * as authService from '../auth/auth-service';
-import { UserRole, CommissioningOrg } from '../shared/models';
+import { UserRole } from '../shared/models';
 
 const log = createLogger('seed');
 
 /**
- * Auto-seed the database with default data for quick deployment.
- * Only runs if the database is empty (no users exist).
- * Skips if already commissioned.
+ * Auto-seed on first run: creates the initial Super Admin account.
+ * The system starts UNCOMMISSIONED — the Super Admin must complete
+ * the commissioning wizard on first login before anyone else can use the system.
  */
 export async function seedDefaults(): Promise<void> {
   const db = getDb();
@@ -20,121 +19,68 @@ export async function seedDefaults(): Promise<void> {
     return;
   }
 
-  log.info('Seeding default data for quick deployment...');
+  log.info('First-run detected — seeding initial Super Admin account...');
 
-  // Set default commissioning codes
-  const defaultSwimexCode = process.env.SWIMEX_CODE ?? 'SW1MEX-D3FALT-QU1CKD-3PL0Y1';
-  const defaultBscCode = process.env.BSC_CODE ?? 'BSC1ND-D3FALT-QU1CKD-3PL0Y2';
+  // Mark system as NOT commissioned
+  db.prepare(`
+    INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioned', 'false', datetime('now'))
+  `).run();
+  db.prepare(`
+    INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioning_step', '0', datetime('now'))
+  `).run();
 
-  try {
-    await authService.setCommissioningCode(CommissioningOrg.SWIMEX, defaultSwimexCode);
-    await authService.setCommissioningCode(CommissioningOrg.BSC_INDUSTRIES, defaultBscCode);
-    log.info('Commissioning codes set');
-  } catch (err: any) {
-    log.warn(`Commissioning code setup: ${err.message}`);
-  }
-
-  // Create Super Admin
+  // Create default Super Admin — this is the only account that exists before commissioning
   try {
     await authService.createUser('superadmin', 'superadmin', 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
-    log.info('Created Super Administrator: superadmin / superadmin');
+    log.info('Created initial Super Administrator: superadmin / superadmin');
   } catch (err: any) {
     log.warn(`Super admin creation: ${err.message}`);
   }
 
-  // Create Admin
-  const adminUser = config.defaultAdminUser;
-  const adminPass = config.defaultAdminPass;
-  try {
-    await authService.createUser(adminUser, adminPass, 'Administrator', UserRole.ADMINISTRATOR);
-    log.info(`Created Administrator: ${adminUser} / ${adminPass}`);
-  } catch (err: any) {
-    log.warn(`Admin creation: ${err.message}`);
-  }
-
-  // Create demo user
-  try {
-    await authService.createUser('swimmer', 'swimmer', 'Demo Swimmer', UserRole.USER);
-    log.info('Created demo user: swimmer / swimmer');
-  } catch (err: any) {
-    log.warn(`Demo user creation: ${err.message}`);
-  }
-
-  // Seed sample workout programs
-  try {
-    const adminRow = db.prepare("SELECT id FROM users WHERE role = 'ADMINISTRATOR' LIMIT 1").get() as { id: string } | undefined;
-    if (adminRow) {
-      const programs = [
-        {
-          name: 'Morning Warm-Up',
-          type: 'CUSTOM',
-          sets: 1,
-          steps: [
-            { order: 1, minutes: 3, seconds: 0, speed: 20 },
-            { order: 2, minutes: 5, seconds: 0, speed: 35 },
-            { order: 3, minutes: 5, seconds: 0, speed: 45 },
-            { order: 4, minutes: 2, seconds: 0, speed: 25 },
-          ],
-          isPublic: true,
-        },
-        {
-          name: 'Endurance Builder',
-          type: 'CUSTOM',
-          sets: 2,
-          steps: [
-            { order: 1, minutes: 5, seconds: 0, speed: 30 },
-            { order: 2, minutes: 10, seconds: 0, speed: 50 },
-            { order: 3, minutes: 5, seconds: 0, speed: 60 },
-            { order: 4, minutes: 5, seconds: 0, speed: 40 },
-            { order: 5, minutes: 3, seconds: 0, speed: 25 },
-          ],
-          isPublic: true,
-        },
-        {
-          name: 'Recovery Session',
-          type: 'CUSTOM',
-          sets: 1,
-          steps: [
-            { order: 1, minutes: 10, seconds: 0, speed: 15 },
-            { order: 2, minutes: 10, seconds: 0, speed: 20 },
-            { order: 3, minutes: 5, seconds: 0, speed: 10 },
-          ],
-          isPublic: true,
-        },
-      ];
-
-      const { v4: uuidv4 } = require('uuid');
-      for (const prog of programs) {
-        db.prepare(`
-          INSERT INTO workout_programs (id, owner_id, name, type, sets, steps, is_public)
-          VALUES (?, ?, ?, ?, ?, ?, 1)
-        `).run(uuidv4(), adminRow.id, prog.name, prog.type, prog.sets, JSON.stringify(prog.steps));
-      }
-      log.info(`Seeded ${programs.length} sample workout programs`);
-    }
-  } catch (err: any) {
-    log.warn(`Sample programs: ${err.message}`);
-  }
-
-  // Seed default UI layout
-  try {
-    const { v4: uuidv4 } = require('uuid');
-    db.prepare(`
-      INSERT INTO ui_layouts (id, name, template_id, is_active, widgets, version)
-      VALUES (?, 'Default Layout', 'modern', 1, '[]', 1)
-    `).run(uuidv4());
-    log.info('Created default UI layout (Modern template)');
-  } catch (err: any) {
-    log.warn(`Default layout: ${err.message}`);
-  }
-
+  // Seed default feature flags
   log.info('========================================');
-  log.info(' Quick Deploy — Default Accounts');
+  log.info(' First-Run Setup Required');
   log.info('========================================');
-  log.info(` Super Admin: superadmin / superadmin`);
-  log.info(` Admin:       ${adminUser} / ${adminPass}`);
-  log.info(` Demo User:   swimmer / swimmer`);
+  log.info(' 1. Open the web interface in a browser');
+  log.info(' 2. Log in as: superadmin / superadmin');
+  log.info(' 3. Complete the commissioning wizard');
   log.info('========================================');
-  log.info(' CHANGE THESE PASSWORDS after first login!');
-  log.info('========================================');
+}
+
+/**
+ * Check if the system has been commissioned.
+ */
+export function isSystemCommissioned(): boolean {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM system_config WHERE key = 'commissioned'").get() as { value: string } | undefined;
+  return row?.value === 'true';
+}
+
+/**
+ * Mark the system as commissioned.
+ */
+export function markCommissioned(): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioned', 'true', datetime('now'))
+  `).run();
+}
+
+/**
+ * Get a system config value.
+ */
+export function getSystemConfig(key: string): string | null {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM system_config WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+/**
+ * Set a system config value.
+ */
+export function setSystemConfig(key: string, value: string): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, datetime('now'))
+  `).run(key, value);
 }
