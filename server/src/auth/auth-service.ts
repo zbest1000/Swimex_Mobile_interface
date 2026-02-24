@@ -118,7 +118,7 @@ export async function login(username: string, password: string, sourceIp?: strin
     throw new AuthError('Invalid credentials');
   }
 
-  db.prepare('UPDATE users SET last_login_at = datetime("now") WHERE id = ?').run(row.id);
+  db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(row.id);
 
   const user = toUserDTO(row);
   const token = generateToken({ userId: user.id, username: user.username, role: user.role });
@@ -208,7 +208,7 @@ export async function setCommissioningCode(org: CommissioningOrg, code: string):
 
   const existing = db.prepare('SELECT id FROM commissioning_codes WHERE organization = ?').get(org);
   if (existing) {
-    db.prepare('UPDATE commissioning_codes SET code_hash = ?, commissioned_at = datetime("now") WHERE organization = ?')
+    db.prepare("UPDATE commissioning_codes SET code_hash = ?, commissioned_at = datetime('now') WHERE organization = ?")
       .run(hash, org);
   } else {
     db.prepare('INSERT INTO commissioning_codes (id, organization, code_hash) VALUES (?, ?, ?)')

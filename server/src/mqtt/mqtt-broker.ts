@@ -51,6 +51,8 @@ export class MqttService extends EventEmitter {
     super();
     this.mqttConfig = { ...DEFAULT_MQTT_CONFIG, ...mqttCfg };
     this.topics = DEFAULT_TOPICS(config.poolId);
+    // Prevent unhandled error crashes
+    this.on('error', () => {});
   }
 
   async start(): Promise<void> {
@@ -113,7 +115,10 @@ export class MqttService extends EventEmitter {
 
     this.client.on('error', (err) => {
       log.error('MQTT client error', err.message);
-      this.emit('error', err);
+      // Only emit if there are listeners (prevents unhandled error crash)
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', err);
+      }
     });
 
     this.client.on('message', (topic: string, payload: Buffer, packet: IPublishPacket) => {
