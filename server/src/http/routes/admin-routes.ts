@@ -16,14 +16,22 @@ const router = Router();
 
 // --- System dashboard ---
 router.get('/dashboard', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  const { tagDatabase } = require('../../tags/tag-database');
+  const { workoutEngine } = require('../../workouts/workout-engine');
   res.json({
     success: true,
     data: {
       wsClients: wsHandler.getConnectedCount(),
-      mqttClients: mqttBroker.getConnectedClients(),
-      mqttRunning: mqttBroker.isRunning(),
+      wsClientList: wsHandler.getClientList(),
+      mqttConnected: mqttBroker.isConnected(),
       modbusServerRunning: modbusServer.isRunning(),
+      modbusServerConnections: modbusServer.getConnectionCount(),
       modbusClientConnected: modbusClient.isConnected(),
+      modbusClientStats: modbusClient.getStats(),
+      tagStats: tagDatabase.getStats(),
+      activeWorkout: workoutEngine.getActiveWorkout(),
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
     },
   });
 });

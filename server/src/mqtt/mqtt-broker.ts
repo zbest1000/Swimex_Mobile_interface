@@ -1,152 +1,320 @@
-import Aedes, { AedesOptions } from 'aedes';
-import { createServer, Server } from 'net';
+import mqtt, { MqttClient, IClientOptions, IPublishPacket } from 'mqtt';
+import { EventEmitter } from 'events';
 import { config } from '../utils/config';
 import { createLogger } from '../utils/logger';
 import { tagDatabase } from '../tags/tag-database';
 import { DEFAULT_TOPICS } from '../shared/protocols';
 
-const log = createLogger('mqtt-broker');
+const log = createLogger('mqtt');
 
-export class MqttBroker {
-  private aedes: Aedes;
-  private server: Server;
+export interface MqttBrokerConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  clientId: string;
+  keepalive: number;
+  reconnectPeriod: number;
+  useTls: boolean;
+  topicPrefix: string;
+  qos: 0 | 1 | 2;
+}
+
+const DEFAULT_MQTT_CONFIG: MqttBrokerConfig = {
+  host: process.env.MQTT_HOST ?? 'localhost',
+  port: parseInt(process.env.MQTT_PORT ?? '1883', 10),
+  username: process.env.MQTT_USER ?? 'edge-server',
+  password: process.env.MQTT_PASS ?? 'edge-server-secret',
+  clientId: `edge-server-${process.env.POOL_ID ?? 'default'}-${Date.now()}`,
+  keepalive: 60,
+  reconnectPeriod: 5000,
+  useTls: false,
+  topicPrefix: `swimex/${process.env.POOL_ID ?? 'default'}`,
+  qos: 1,
+};
+
+/**
+ * MQTT Service — connects to Eclipse Mosquitto broker as a client.
+ * Bridges MQTT messages ↔ Tag Database for real-time PLC data sync.
+ */
+export class MqttService extends EventEmitter {
+  private client: MqttClient | null = null;
+  private mqttConfig: MqttBrokerConfig;
   private topics: ReturnType<typeof DEFAULT_TOPICS>;
-  private started = false;
+  private connected = false;
+  private subscriptions = new Map<string, { qos: 0 | 1 | 2; handler?: (topic: string, payload: Buffer) => void }>();
+  private keepAliveSequence = 0;
+  private keepAliveTimer: NodeJS.Timeout | null = null;
+  private lastKeepAliveResponse: number = Date.now();
 
-  constructor() {
-    const aedesOpts: AedesOptions = {
-      id: 'swimex-edge-broker',
-      heartbeatInterval: config.heartbeatIntervalMs,
+  constructor(mqttCfg?: Partial<MqttBrokerConfig>) {
+    super();
+    this.mqttConfig = { ...DEFAULT_MQTT_CONFIG, ...mqttCfg };
+    this.topics = DEFAULT_TOPICS(config.poolId);
+  }
+
+  async start(): Promise<void> {
+    if (this.client) return;
+
+    const protocol = this.mqttConfig.useTls ? 'mqtts' : 'mqtt';
+    const url = `${protocol}://${this.mqttConfig.host}:${this.mqttConfig.port}`;
+
+    const opts: IClientOptions = {
+      clientId: this.mqttConfig.clientId,
+      username: this.mqttConfig.username,
+      password: this.mqttConfig.password,
+      keepalive: this.mqttConfig.keepalive,
+      reconnectPeriod: this.mqttConfig.reconnectPeriod,
+      clean: true,
+      will: {
+        topic: `${this.mqttConfig.topicPrefix}/status/server_online`,
+        payload: Buffer.from(JSON.stringify({ online: false, timestamp: Date.now() })),
+        qos: 1,
+        retain: true,
+      },
     };
 
-    this.aedes = new Aedes(aedesOpts);
-    this.server = createServer(this.aedes.handle);
-    this.topics = DEFAULT_TOPICS(config.poolId);
-    this.setupHandlers();
-  }
+    log.info(`Connecting to Mosquitto broker at ${url} as "${this.mqttConfig.clientId}"...`);
+    this.client = mqtt.connect(url, opts);
 
-  private setupHandlers(): void {
-    this.aedes.on('client', (client) => {
-      log.info(`MQTT client connected: ${client.id}`);
-    });
+    this.client.on('connect', () => {
+      this.connected = true;
+      log.info(`Connected to Mosquitto broker at ${url}`);
 
-    this.aedes.on('clientDisconnect', (client) => {
-      log.info(`MQTT client disconnected: ${client.id}`);
-    });
+      this.publishRetained(`${this.mqttConfig.topicPrefix}/status/server_online`, { online: true, timestamp: Date.now() });
 
-    this.aedes.on('publish', (packet, _client) => {
-      if (packet.topic.startsWith('$SYS')) return;
-
-      const topic = packet.topic;
-      const payload = packet.payload.toString();
-
-      log.debug(`MQTT publish: ${topic}`, payload);
-
-      // Bridge MQTT → tag database
-      this.bridgeToTagDatabase(topic, payload);
-    });
-
-    this.aedes.on('subscribe', (subscriptions, client) => {
-      const topics = subscriptions.map(s => s.topic).join(', ');
-      log.debug(`MQTT subscribe: ${client.id} → ${topics}`);
-    });
-
-    // Bridge tag database → MQTT
-    tagDatabase.on('tag:changed', (address: string, tagValue: { value: unknown; source: string }) => {
-      if (tagValue.source === 'mqtt') return; // Avoid loops
-      const topic = this.tagAddressToMqttTopic(address);
-      if (topic) {
-        this.publish(topic, JSON.stringify(tagValue.value));
+      this.subscribeToCoreTopic();
+      for (const [topic, sub] of this.subscriptions) {
+        this.client!.subscribe(topic, { qos: sub.qos });
       }
+
+      this.startKeepAlive();
+      this.emit('connected');
+    });
+
+    this.client.on('reconnect', () => {
+      log.info('Reconnecting to Mosquitto broker...');
+      this.emit('reconnecting');
+    });
+
+    this.client.on('disconnect', () => {
+      this.connected = false;
+      this.stopKeepAlive();
+      log.warn('Disconnected from Mosquitto broker');
+      this.emit('disconnected');
+    });
+
+    this.client.on('offline', () => {
+      this.connected = false;
+      this.stopKeepAlive();
+      log.warn('MQTT client offline');
+      this.emit('offline');
+    });
+
+    this.client.on('error', (err) => {
+      log.error('MQTT client error', err.message);
+      this.emit('error', err);
+    });
+
+    this.client.on('message', (topic: string, payload: Buffer, packet: IPublishPacket) => {
+      this.handleMessage(topic, payload, packet);
+    });
+
+    return new Promise((resolve) => {
+      this.client!.once('connect', () => resolve());
+      setTimeout(() => {
+        if (!this.connected) {
+          log.warn('MQTT connection timeout — will continue retrying in background');
+          resolve();
+        }
+      }, 10000);
     });
   }
 
-  private bridgeToTagDatabase(topic: string, payload: string): void {
-    const tagAddress = this.mqttTopicToTagAddress(topic);
-    if (tagAddress) {
+  private subscribeToCoreTopic(): void {
+    if (!this.client) return;
+
+    const prefix = this.mqttConfig.topicPrefix;
+    const topicPatterns = [
+      `${prefix}/status/#`,
+      `${prefix}/command/#`,
+      `${prefix}/keepalive`,
+    ];
+
+    for (const pattern of topicPatterns) {
+      this.client.subscribe(pattern, { qos: this.mqttConfig.qos }, (err) => {
+        if (err) {
+          log.error(`Failed to subscribe to ${pattern}`, err.message);
+        } else {
+          log.info(`Subscribed to ${pattern}`);
+        }
+      });
+    }
+  }
+
+  private handleMessage(topic: string, payload: Buffer, packet: IPublishPacket): void {
+    const payloadStr = payload.toString();
+
+    // Handle keep-alive responses from PLC
+    if (topic === this.topics.keepAlive) {
       try {
-        const value = JSON.parse(payload);
-        tagDatabase.writeTag(tagAddress, value, 'mqtt');
-      } catch {
-        tagDatabase.writeTag(tagAddress, payload, 'mqtt');
+        const msg = JSON.parse(payloadStr);
+        if (msg.type === 'pong' && msg.source === 'plc') {
+          this.lastKeepAliveResponse = Date.now();
+          this.emit('keepalive:plc_response', msg);
+        }
+      } catch { /* not JSON, ignore */ }
+      return;
+    }
+
+    // Bridge MQTT → Tag Database
+    const tagAddress = topic;
+    let value: unknown;
+    try {
+      value = JSON.parse(payloadStr);
+    } catch {
+      value = payloadStr;
+    }
+
+    tagDatabase.writeTag(tagAddress, value, 'mqtt');
+    this.emit('message', topic, value, packet);
+
+    // Invoke specific subscription handlers
+    const sub = this.subscriptions.get(topic);
+    if (sub?.handler) {
+      sub.handler(topic, payload);
+    }
+  }
+
+  // --- Publishing ---
+
+  publish(topic: string, data: unknown, qos?: 0 | 1 | 2): void {
+    if (!this.client || !this.connected) {
+      log.warn(`Cannot publish to ${topic} — not connected`);
+      return;
+    }
+
+    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+    this.client.publish(topic, payload, { qos: qos ?? this.mqttConfig.qos }, (err) => {
+      if (err) {
+        log.error(`Publish failed for ${topic}`, err.message);
       }
+    });
+  }
+
+  publishRetained(topic: string, data: unknown, qos?: 0 | 1 | 2): void {
+    if (!this.client || !this.connected) return;
+
+    const payload = typeof data === 'string' ? data : JSON.stringify(data);
+    this.client.publish(topic, payload, { qos: qos ?? this.mqttConfig.qos, retain: true }, (err) => {
+      if (err) {
+        log.error(`Publish retained failed for ${topic}`, err.message);
+      }
+    });
+  }
+
+  publishCommand(command: string, data: unknown): void {
+    const topic = `${this.mqttConfig.topicPrefix}/command/${command}`;
+    this.publish(topic, data, 1);
+  }
+
+  publishStatus(key: string, data: unknown, retained = true): void {
+    const topic = `${this.mqttConfig.topicPrefix}/status/${key}`;
+    if (retained) {
+      this.publishRetained(topic, data, 1);
+    } else {
+      this.publish(topic, data, 0);
     }
   }
 
-  private mqttTopicToTagAddress(topic: string): string | null {
-    if (topic.startsWith(this.topics.statusPrefix)) {
-      return topic;
+  // --- Subscriptions ---
+
+  subscribe(topic: string, qos: 0 | 1 | 2 = 1, handler?: (topic: string, payload: Buffer) => void): void {
+    this.subscriptions.set(topic, { qos, handler });
+    if (this.client && this.connected) {
+      this.client.subscribe(topic, { qos });
     }
-    if (topic.startsWith(this.topics.commandPrefix)) {
-      return topic;
-    }
-    return null;
   }
 
-  private tagAddressToMqttTopic(address: string): string | null {
-    if (address.startsWith('swimex/')) {
-      return address;
+  unsubscribe(topic: string): void {
+    this.subscriptions.delete(topic);
+    if (this.client && this.connected) {
+      this.client.unsubscribe(topic);
     }
-    return null;
   }
 
-  publish(topic: string, payload: string, options?: { retain?: boolean; qos?: 0 | 1 | 2 }): void {
-    this.aedes.publish({
-      topic,
-      payload: Buffer.from(payload),
-      cmd: 'publish',
-      qos: options?.qos ?? 0,
-      retain: options?.retain ?? false,
-      dup: false,
-    }, () => {});
+  // --- Keep-Alive Heartbeat ---
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+    this.keepAliveTimer = setInterval(() => {
+      this.sendKeepAlive();
+      this.checkKeepAliveTimeout();
+    }, config.heartbeatIntervalMs);
+    log.info(`Keep-alive heartbeat started (interval: ${config.heartbeatIntervalMs}ms)`);
   }
 
-  publishKeepAlive(): void {
+  private stopKeepAlive(): void {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
+  private sendKeepAlive(): void {
+    this.keepAliveSequence++;
     const msg = {
       type: 'ping',
       timestamp: Date.now(),
       source: 'server',
-      sequenceNumber: Date.now(),
+      sequenceNumber: this.keepAliveSequence,
     };
-    this.publish(this.topics.keepAlive, JSON.stringify(msg), { qos: 1 });
+    this.publish(this.topics.keepAlive, msg, 1);
   }
 
-  async start(): Promise<void> {
-    if (this.started) return;
+  private checkKeepAliveTimeout(): void {
+    const elapsed = Date.now() - this.lastKeepAliveResponse;
+    const threshold = config.heartbeatIntervalMs * config.heartbeatMissedThreshold;
 
-    return new Promise((resolve, reject) => {
-      this.server.listen(config.mqttPort, () => {
-        this.started = true;
-        log.info(`MQTT broker listening on port ${config.mqttPort}`);
-        resolve();
-      });
-      this.server.on('error', (err) => {
-        log.error('MQTT broker error', err);
-        reject(err);
-      });
-    });
+    if (elapsed > threshold && this.lastKeepAliveResponse > 0) {
+      log.warn(`PLC keep-alive timeout: ${elapsed}ms since last response (threshold: ${threshold}ms)`);
+      this.emit('keepalive:plc_timeout', elapsed);
+    }
+  }
+
+  getTimeSinceLastPlcResponse(): number {
+    return Date.now() - this.lastKeepAliveResponse;
+  }
+
+  // --- Status ---
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  getTopicPrefix(): string {
+    return this.mqttConfig.topicPrefix;
+  }
+
+  getConfig(): MqttBrokerConfig {
+    return { ...this.mqttConfig };
   }
 
   async stop(): Promise<void> {
-    if (!this.started) return;
-    return new Promise((resolve) => {
-      this.aedes.close(() => {
-        this.server.close(() => {
-          this.started = false;
-          log.info('MQTT broker stopped');
+    this.stopKeepAlive();
+    if (this.client) {
+      this.publishRetained(`${this.mqttConfig.topicPrefix}/status/server_online`, { online: false, timestamp: Date.now() });
+
+      return new Promise((resolve) => {
+        this.client!.end(false, {}, () => {
+          this.client = null;
+          this.connected = false;
+          log.info('MQTT client disconnected');
           resolve();
         });
       });
-    });
-  }
-
-  getConnectedClients(): number {
-    return this.aedes.connectedClients;
-  }
-
-  isRunning(): boolean {
-    return this.started;
+    }
   }
 }
 
-export const mqttBroker = new MqttBroker();
+export const mqttBroker = new MqttService();
