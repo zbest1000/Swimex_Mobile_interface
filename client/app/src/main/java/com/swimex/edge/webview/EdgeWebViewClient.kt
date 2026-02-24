@@ -5,21 +5,25 @@ import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
-/**
- * Custom WebViewClient that handles SSL errors for local network,
- * intercepts page loading for connection status, and manages
- * the JavaScript interface bridge to native (kiosk exit, Bluetooth, etc.).
- */
 class EdgeWebViewClient(
-    private val onConnectionStatusChanged: (Boolean, String?) -> Unit
+    private val onConnectionStatusChanged: (connected: Boolean, detail: String?) -> Unit,
+    private val onHttpError: ((statusCode: Int) -> Unit)? = null
 ) : WebViewClient() {
+
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val url = request?.url?.toString() ?: return false
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return false
+        }
+        return true
+    }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        onConnectionStatusChanged(true, url)
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
@@ -38,18 +42,27 @@ class EdgeWebViewClient(
         }
     }
 
+    override fun onReceivedHttpError(
+        view: WebView?,
+        request: WebResourceRequest?,
+        errorResponse: WebResourceResponse?
+    ) {
+        super.onReceivedHttpError(view, request, errorResponse)
+        if (request?.isForMainFrame == true) {
+            val statusCode = errorResponse?.statusCode ?: return
+            onHttpError?.invoke(statusCode)
+        }
+    }
+
     override fun onReceivedSslError(
         view: WebView?,
         handler: SslErrorHandler?,
         error: SslError?
     ) {
-        // For local network / development: allow self-signed certs
-        // In production, consider stricter validation
-        val host = error?.primaryError?.let { " (${error.url})" } ?: ""
         if (isLocalNetwork(error?.url)) {
             handler?.proceed()
         } else {
-            onConnectionStatusChanged(false, "SSL error: ${error?.primaryError}$host")
+            onConnectionStatusChanged(false, "SSL error: ${error?.primaryError} (${error?.url})")
             handler?.cancel()
         }
     }
@@ -60,12 +73,6 @@ class EdgeWebViewClient(
             url.contains("127.0.0.1") ||
             url.contains("10.") ||
             url.contains("192.168.") ||
-            url.contains("172.16.") ||
-            url.contains("172.17.") ||
-            url.contains("172.18.") ||
-            url.contains("172.19.") ||
-            url.contains("172.2") ||
-            url.contains("172.30.") ||
-            url.contains("172.31.")
+            Regex("172\\.(1[6-9]|2[0-9]|3[01])\\.").containsMatchIn(url)
     }
 }

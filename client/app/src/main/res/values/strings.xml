@@ -1,8 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SwimEx EDGE</string>
-    <string name="default_server_url">http://192.168.1.1:3000</string>
+    <string name="default_server_url">http://192.168.1.1</string>
     <string name="no_server_url">No server URL configured</string>
     <string name="exit_requires_auth">Exit requires Admin or Maintenance authentication</string>
+    <string name="exit_auth_failed">Authentication failed — invalid credentials or insufficient role</string>
+    <string name="exit_network_error">Cannot reach server to authenticate</string>
     <string name="pref_key_server_url">server_url</string>
+    <string name="connecting_message">Connecting to SwimEx EDGE…</string>
+    <string name="connection_lost">Connection Lost</string>
+    <string name="retrying_message">Retrying automatically every 5 seconds…</string>
+    <string name="configure_server">Configure Server</string>
+    <string name="setup_title">Server Setup</string>
+    <string name="setup_message">Enter the SwimEx EDGE server URL:</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="server_url_saved">Server URL saved</string>
+    <string name="enter_server_url">http://192.168.1.1</string>
+    <string name="exit_kiosk_title">Exit Kiosk Mode</string>
+    <string name="exit_kiosk_message">Enter admin credentials to exit kiosk mode:</string>
+    <string name="username_hint">Username</string>
+    <string name="password_hint">Password</string>
+    <string name="authenticate">Authenticate</string>
+    <string name="http_unauthorized">Session expired — please reload</string>
+    <string name="http_forbidden">Access denied</string>
+    <string name="wifi_restored">WiFi connection restored</string>
 </resources>
