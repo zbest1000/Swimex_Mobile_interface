@@ -1,189 +1,294 @@
 /**
- * SwimEx EDGE — Workout Display Logic
- * Speed gauge, timer, step progress, control buttons, keypad, safety alert
+ * SwimEx EDGE — Workout Display Components
+ * SVG gauge, timer, step progress, control buttons, numeric keypad, safety stop.
  */
-
 const WorkoutUI = (function () {
   'use strict';
 
-  const GAUGE_MIN = 0;
-  const GAUGE_MAX = 100;
-
-  function createSpeedGauge(container, value = 0) {
-    if (!container) return null;
-    const pct = Math.max(0, Math.min(100, value));
-    const angle = (pct / 100) * 270 - 135; // -135° to 135°
-    const radius = 100;
-    const cx = 120;
-    const cy = 120;
-
-    const html = `
-      <svg class="speed-gauge" viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="gaugeBg" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" style="stop-color:var(--color-primary-light)"/>
-            <stop offset="100%" style="stop-color:var(--color-accent)"/>
-          </linearGradient>
-        </defs>
-        <path d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="var(--color-surface)" stroke-width="12" stroke-linecap="round"/>
-        <path class="gauge-fill" d="M 20 120 A 100 100 0 0 1 220 120" fill="none" stroke="url(#gaugeBg)" stroke-width="12" stroke-linecap="round"
-          stroke-dasharray="471" stroke-dashoffset="${471 - (pct / 100) * 471}"/>
-        <text x="120" y="95" text-anchor="middle" class="gauge-value">${Math.round(pct)}</text>
-        <text x="120" y="115" text-anchor="middle" class="gauge-unit">%</text>
-      </svg>
-    `;
-    container.innerHTML = html;
-    return container;
+  function formatTime(ms) {
+    if (ms == null || ms < 0) ms = 0;
+    var totalSec = Math.floor(ms / 1000);
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    return pad2(m) + ':' + pad2(s);
   }
 
-  function updateSpeedGauge(container, value) {
-    const pct = Math.max(0, Math.min(100, value));
-    const fill = container?.querySelector('.gauge-fill');
-    const valEl = container?.querySelector('.gauge-value');
-    if (fill) fill.setAttribute('stroke-dashoffset', 471 - (pct / 100) * 471);
-    if (valEl) valEl.textContent = Math.round(pct);
+  function formatTimeDetailed(ms) {
+    if (ms == null || ms < 0) ms = 0;
+    var totalSec = Math.floor(ms / 1000);
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    return pad2(h) + ':' + pad2(m) + ':' + pad2(s);
   }
 
-  function createTimerDisplay(container, elapsedMs = 0) {
-    if (!container) return null;
-    const s = Math.floor(elapsedMs / 1000) % 60;
-    const m = Math.floor(elapsedMs / 60000);
-    const str = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    container.innerHTML = `<span class="workout-timer">${str}</span>`;
-    return container;
-  }
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
-  function updateTimerDisplay(container, elapsedMs) {
-    const s = Math.floor(elapsedMs / 1000) % 60;
-    const m = Math.floor(elapsedMs / 60000);
-    const str = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    const el = container?.querySelector?.('.workout-timer') || container;
-    if (el) el.textContent = str;
-  }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-  function createStepProgress(container, total, current, completed) {
-    if (!container) return null;
-    const dots = [];
-    for (let i = 0; i < total; i++) {
-      let cls = 'step-dot';
-      if (i < completed) cls += ' completed';
-      else if (i === current) cls += ' active';
-      dots.push(`<span class="${cls}" data-step="${i}"></span>`);
+  function renderSpeedGauge(container, speed, maxSpeed) {
+    if (!container) return;
+    maxSpeed = maxSpeed || 100;
+    speed = clamp(speed || 0, 0, maxSpeed);
+    var pct = speed / maxSpeed;
+
+    var cx = 150, cy = 140, r = 110;
+    var startAngle = 225, endAngle = -45;
+    var totalArc = 270;
+    var sweepAngle = pct * totalArc;
+
+    function polarToXY(angleDeg) {
+      var rad = (angleDeg * Math.PI) / 180;
+      return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
     }
-    container.innerHTML = `<div class="workout-step-progress">${dots.join('')}</div>`;
-    return container;
+
+    var bgStart = polarToXY(startAngle);
+    var bgEnd = polarToXY(endAngle);
+    var valEnd = polarToXY(startAngle - sweepAngle);
+    var largeArc = totalArc > 180 ? 1 : 0;
+    var valLargeArc = sweepAngle > 180 ? 1 : 0;
+
+    var ticks = '';
+    for (var i = 0; i <= 10; i++) {
+      var tickPct = i / 10;
+      var tickAngle = startAngle - tickPct * totalArc;
+      var outer = polarToXYR(tickAngle, r + 4);
+      var inner = polarToXYR(tickAngle, r - (i % 5 === 0 ? 14 : 8));
+      ticks += '<line x1="' + outer.x + '" y1="' + outer.y +
+        '" x2="' + inner.x + '" y2="' + inner.y +
+        '" stroke="var(--color-text-muted)" stroke-width="' + (i % 5 === 0 ? 2 : 1) +
+        '" stroke-linecap="round"/>';
+      if (i % 5 === 0) {
+        var labelPos = polarToXYR(tickAngle, r - 24);
+        ticks += '<text x="' + labelPos.x + '" y="' + labelPos.y +
+          '" text-anchor="middle" dominant-baseline="central" class="gauge-label">' +
+          Math.round(tickPct * maxSpeed) + '</text>';
+      }
+    }
+
+    function polarToXYR(angleDeg, radius) {
+      var rad = (angleDeg * Math.PI) / 180;
+      return { x: cx + radius * Math.cos(rad), y: cy - radius * Math.sin(rad) };
+    }
+
+    var needleAngle = startAngle - sweepAngle;
+    var needleTip = polarToXYR(needleAngle, r - 18);
+    var needleBase1 = polarToXYR(needleAngle + 90, 5);
+    var needleBase2 = polarToXYR(needleAngle - 90, 5);
+
+    var color;
+    if (pct < 0.33) color = 'var(--color-success)';
+    else if (pct < 0.66) color = 'var(--color-accent)';
+    else if (pct < 0.85) color = 'var(--color-warning)';
+    else color = 'var(--color-danger)';
+
+    container.innerHTML =
+      '<svg class="speed-gauge" viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">' +
+        '<defs>' +
+          '<linearGradient id="gaugeArc" x1="0%" y1="0%" x2="100%" y2="0%">' +
+            '<stop offset="0%" style="stop-color:var(--color-success)"/>' +
+            '<stop offset="50%" style="stop-color:var(--color-accent)"/>' +
+            '<stop offset="100%" style="stop-color:var(--color-danger)"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        '<path d="M ' + bgStart.x + ' ' + bgStart.y + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 0 ' + bgEnd.x + ' ' + bgEnd.y + '"' +
+          ' fill="none" stroke="var(--color-surface)" stroke-width="14" stroke-linecap="round"/>' +
+        '<path d="M ' + bgStart.x + ' ' + bgStart.y + ' A ' + r + ' ' + r + ' 0 ' + valLargeArc + ' 0 ' + valEnd.x + ' ' + valEnd.y + '"' +
+          ' fill="none" stroke="url(#gaugeArc)" stroke-width="14" stroke-linecap="round" class="gauge-fill"/>' +
+        ticks +
+        '<polygon points="' + needleTip.x + ',' + needleTip.y + ' ' + needleBase1.x + ',' + needleBase1.y + ' ' + needleBase2.x + ',' + needleBase2.y + '"' +
+          ' fill="' + color + '" class="gauge-needle"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="8" fill="var(--color-bg-elevated)"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="' + color + '"/>' +
+        '<text x="' + cx + '" y="' + (cy - 30) + '" text-anchor="middle" class="gauge-value">' + Math.round(speed) + '</text>' +
+        '<text x="' + cx + '" y="' + (cy - 10) + '" text-anchor="middle" class="gauge-unit">% speed</text>' +
+      '</svg>';
   }
 
-  function updateStepProgress(container, current, completed) {
-    const dots = container?.querySelectorAll?.('.step-dot');
-    if (!dots) return;
-    dots.forEach((d, i) => {
-      d.classList.remove('active', 'completed');
-      if (i < completed) d.classList.add('completed');
-      else if (i === current) d.classList.add('active');
-    });
+  function updateGaugeValue(container, speed, maxSpeed) {
+    if (!container) return;
+    maxSpeed = maxSpeed || 100;
+    speed = clamp(speed || 0, 0, maxSpeed);
+    var valEl = container.querySelector('.gauge-value');
+    if (valEl) valEl.textContent = Math.round(speed);
+    renderSpeedGauge(container, speed, maxSpeed);
   }
 
-  function createControlButtons(container, callbacks) {
-    if (!container) return null;
-    const { onStart, onPause, onResume, onEnd, onSpeedUp, onSpeedDown } = callbacks || {};
-    container.innerHTML = `
-      <div class="workout-controls">
-        <button class="btn btn-success btn-lg" data-action="start">START</button>
-        <button class="btn btn-primary btn-lg" data-action="pause">PAUSE</button>
-        <button class="btn btn-primary btn-lg" data-action="resume" style="display:none">RESUME</button>
-        <button class="btn btn-danger btn-lg" data-action="end">END</button>
-        <button class="btn btn-ghost btn-icon" data-action="speed-up">+</button>
-        <button class="btn btn-ghost btn-icon" data-action="speed-down">−</button>
-      </div>
-    `;
+  function renderTimer(container, elapsedMs, totalMs) {
+    if (!container) return;
+    var elapsed = formatTime(elapsedMs || 0);
+    var html = '<div class="execution-timer">' + elapsed + '</div>';
+    if (totalMs && totalMs > 0) {
+      html += '<div class="execution-timer-total">/ ' + formatTime(totalMs) + '</div>';
+    }
+    container.innerHTML = html;
+  }
 
-    container.querySelectorAll('[data-action]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const a = btn.dataset.action;
-        if (a === 'start') onStart?.();
-        else if (a === 'pause') onPause?.();
-        else if (a === 'resume') onResume?.();
-        else if (a === 'end') onEnd?.();
-        else if (a === 'speed-up') onSpeedUp?.();
-        else if (a === 'speed-down') onSpeedDown?.();
+  function updateTimer(container, elapsedMs, totalMs) {
+    if (!container) return;
+    var timerEl = container.querySelector('.execution-timer');
+    if (timerEl) timerEl.textContent = formatTime(elapsedMs || 0);
+    var totalEl = container.querySelector('.execution-timer-total');
+    if (totalEl && totalMs && totalMs > 0) {
+      totalEl.textContent = '/ ' + formatTime(totalMs);
+    }
+  }
+
+  function renderStepProgress(container, currentStep, totalSteps, currentSet, totalSets) {
+    if (!container) return;
+    totalSteps = totalSteps || 1;
+    currentStep = currentStep || 0;
+    var bars = '';
+    for (var i = 0; i < totalSteps; i++) {
+      var cls = 'step-indicator';
+      if (i < currentStep) cls += ' completed';
+      else if (i === currentStep) cls += ' active';
+      bars += '<div class="' + cls + '" data-step="' + i + '"></div>';
+    }
+    var setLabel = '';
+    if (totalSets && totalSets > 0) {
+      setLabel = '<div class="step-set-label">Set ' + ((currentSet || 0) + 1) + ' of ' + totalSets + '</div>';
+    }
+    container.innerHTML =
+      '<div class="step-progress-bar">' + bars + '</div>' + setLabel;
+  }
+
+  function updateStepProgress(container, currentStep, totalSteps, currentSet, totalSets) {
+    renderStepProgress(container, currentStep, totalSteps, currentSet, totalSets);
+  }
+
+  function renderControlButtons(container, state, callbacks) {
+    if (!container) return;
+    callbacks = callbacks || {};
+    var s = state || 'idle';
+
+    var startVis = (s === 'idle' || s === 'stopped' || s === 'completed') ? '' : 'display:none;';
+    var pauseVis = (s === 'running') ? '' : 'display:none;';
+    var resumeVis = (s === 'paused') ? '' : 'display:none;';
+    var stopVis = (s === 'running' || s === 'paused') ? '' : 'display:none;';
+    var adjustVis = (s === 'running' || s === 'paused') ? '' : 'display:none;';
+
+    container.innerHTML =
+      '<div class="execution-controls">' +
+        '<button class="btn btn-lg ctrl-btn-adjust" data-action="speed-down" style="' + adjustVis + '">&#x2212; 5</button>' +
+        '<button class="btn btn-lg ctrl-btn-start" data-action="start" style="' + startVis + '">START</button>' +
+        '<button class="btn btn-lg ctrl-btn-pause" data-action="pause" style="' + pauseVis + '">PAUSE</button>' +
+        '<button class="btn btn-lg ctrl-btn-start" data-action="resume" style="' + resumeVis + '">RESUME</button>' +
+        '<button class="btn btn-lg ctrl-btn-stop" data-action="stop" style="' + stopVis + '">STOP</button>' +
+        '<button class="btn btn-lg ctrl-btn-adjust" data-action="speed-up" style="' + adjustVis + '">+ 5</button>' +
+      '</div>';
+
+    container.querySelectorAll('[data-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var a = btn.getAttribute('data-action');
+        if (a === 'start' && callbacks.onStart) callbacks.onStart();
+        else if (a === 'pause' && callbacks.onPause) callbacks.onPause();
+        else if (a === 'resume' && callbacks.onResume) callbacks.onResume();
+        else if (a === 'stop' && callbacks.onStop) callbacks.onStop();
+        else if (a === 'speed-up' && callbacks.onSpeedUp) callbacks.onSpeedUp();
+        else if (a === 'speed-down' && callbacks.onSpeedDown) callbacks.onSpeedDown();
       });
     });
-
-    return container;
   }
 
-  function setControlState(container, state) {
-    const start = container?.querySelector('[data-action="start"]');
-    const pause = container?.querySelector('[data-action="pause"]');
-    const resume = container?.querySelector('[data-action="resume"]');
-    if (!start || !pause || !resume) return;
-    if (state === 'RUNNING') {
-      start.style.display = 'none';
-      pause.style.display = '';
-      resume.style.display = 'none';
-    } else if (state === 'PAUSED') {
-      start.style.display = 'none';
-      pause.style.display = 'none';
-      resume.style.display = '';
-    } else {
-      start.style.display = '';
-      pause.style.display = '';
-      resume.style.display = 'none';
-    }
+  function updateControlState(container, state) {
+    if (!container) return;
+    var s = (state || 'idle').toLowerCase();
+    function vis(el, show) { if (el) el.style.display = show ? '' : 'none'; }
+    vis(container.querySelector('[data-action="start"]'), s === 'idle' || s === 'stopped' || s === 'completed');
+    vis(container.querySelector('[data-action="pause"]'), s === 'running');
+    vis(container.querySelector('[data-action="resume"]'), s === 'paused');
+    vis(container.querySelector('[data-action="stop"]'), s === 'running' || s === 'paused');
+    vis(container.querySelector('[data-action="speed-up"]'), s === 'running' || s === 'paused');
+    vis(container.querySelector('[data-action="speed-down"]'), s === 'running' || s === 'paused');
   }
 
-  function createKeypadPopup(options) {
-    const { title = 'Enter value', initialValue = '', unit = '', onConfirm, onCancel } = options || {};
-    const overlay = document.createElement('div');
+  function renderNumericKeypad(onConfirm, options) {
+    options = options || {};
+    var title = options.title || 'Enter Value';
+    var initial = options.initial !== undefined ? String(options.initial) : '';
+    var maxLen = options.maxLen || 6;
+    var allowDot = options.allowDot !== false;
+    var mode = options.mode || 'number';
+
+    var value = initial;
+
+    var overlay = document.createElement('div');
     overlay.className = 'keypad-overlay';
 
-    let value = String(initialValue);
+    function display() {
+      if (mode === 'time' && value.length > 0) {
+        var digits = value.replace(/\D/g, '');
+        var padded = digits.padStart(4, '0');
+        return padded.slice(0, 2) + ':' + padded.slice(2, 4);
+      }
+      return value || '0';
+    }
 
-    const updateDisplay = () => {
-      const el = overlay.querySelector('.keypad-display');
-      if (el) el.textContent = value || '0';
-    };
+    var dotBtn = allowDot
+      ? '<button class="keypad-btn" data-key=".">.</button>'
+      : '<button class="keypad-btn" data-key="00">00</button>';
 
-    overlay.innerHTML = `
-      <div class="keypad-modal">
-        <div class="keypad-display">${value || '0'}</div>
-        <div class="keypad-grid">
-          <button class="keypad-btn" data-key="7">7</button>
-          <button class="keypad-btn" data-key="8">8</button>
-          <button class="keypad-btn" data-key="9">9</button>
-          <button class="keypad-btn" data-key="4">4</button>
-          <button class="keypad-btn" data-key="5">5</button>
-          <button class="keypad-btn" data-key="6">6</button>
-          <button class="keypad-btn" data-key="1">1</button>
-          <button class="keypad-btn" data-key="2">2</button>
-          <button class="keypad-btn" data-key="3">3</button>
-          <button class="keypad-btn" data-key="0">0</button>
-          <button class="keypad-btn" data-key=".">.</button>
-          <button class="keypad-btn" data-key="back">⌫</button>
-          <button class="keypad-btn" data-key="clear" style="grid-column:span 2">CLEAR</button>
-          <button class="keypad-btn" data-key="ok">OK</button>
-        </div>
-      </div>
-    `;
+    overlay.innerHTML =
+      '<div class="keypad-modal">' +
+        '<div class="keypad-title">' + title + '</div>' +
+        '<div class="keypad-display">' + display() + '</div>' +
+        '<div class="keypad-grid">' +
+          '<button class="keypad-btn" data-key="7">7</button>' +
+          '<button class="keypad-btn" data-key="8">8</button>' +
+          '<button class="keypad-btn" data-key="9">9</button>' +
+          '<button class="keypad-btn" data-key="4">4</button>' +
+          '<button class="keypad-btn" data-key="5">5</button>' +
+          '<button class="keypad-btn" data-key="6">6</button>' +
+          '<button class="keypad-btn" data-key="1">1</button>' +
+          '<button class="keypad-btn" data-key="2">2</button>' +
+          '<button class="keypad-btn" data-key="3">3</button>' +
+          dotBtn +
+          '<button class="keypad-btn" data-key="0">0</button>' +
+          '<button class="keypad-btn keypad-btn-back" data-key="back">&#x232B;</button>' +
+          '<button class="keypad-btn keypad-btn-clear" data-key="clear" style="grid-column:span 2">CLEAR</button>' +
+          '<button class="keypad-btn keypad-btn-confirm" data-key="ok">OK</button>' +
+        '</div>' +
+      '</div>';
 
-    overlay.querySelectorAll('.keypad-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const k = btn.dataset.key;
-        if (k === 'back') value = value.slice(0, -1);
-        else if (k === 'clear') value = '';
-        else if (k === 'ok') {
+    var dispEl = overlay.querySelector('.keypad-display');
+
+    function update() {
+      if (dispEl) dispEl.textContent = display();
+    }
+
+    overlay.querySelectorAll('.keypad-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var k = btn.getAttribute('data-key');
+        if (k === 'back') {
+          value = value.slice(0, -1);
+        } else if (k === 'clear') {
+          value = '';
+        } else if (k === 'ok') {
           overlay.remove();
-          onConfirm?.(parseFloat(value) || 0);
-        } else value += k;
-        updateDisplay();
+          var result;
+          if (mode === 'time') {
+            var d = value.replace(/\D/g, '').padStart(4, '0');
+            result = parseInt(d.slice(0, 2)) * 60 + parseInt(d.slice(2, 4));
+          } else {
+            result = parseFloat(value) || 0;
+          }
+          if (onConfirm) onConfirm(result);
+          return;
+        } else if (k === '.' && value.includes('.')) {
+          return;
+        } else {
+          if (value.length < maxLen) value += k;
+        }
+        update();
       });
     });
 
-    overlay.addEventListener('click', (e) => {
+    overlay.addEventListener('click', function (e) {
       if (e.target === overlay) {
         overlay.remove();
-        onCancel?.();
+        if (options.onCancel) options.onCancel();
       }
     });
 
@@ -191,42 +296,78 @@ const WorkoutUI = (function () {
     return overlay;
   }
 
-  function showKeypad(options) {
-    return createKeypadPopup(options);
-  }
+  function renderSafetyStopOverlay(show, message) {
+    var existing = document.getElementById('safety-stop-overlay');
+    if (!show) {
+      if (existing) existing.remove();
+      return null;
+    }
+    if (existing) return existing;
 
-  function createSafetyStopOverlay(message, onAcknowledge) {
-    const overlay = document.createElement('div');
-    overlay.className = 'safety-alert-overlay';
-    overlay.innerHTML = `
-      <h2>SAFETY STOP</h2>
-      <p>${message || 'Pool has been stopped for safety.'}</p>
-      <button class="btn btn-success btn-lg" data-ack>ACKNOWLEDGE</button>
-    `;
-    overlay.querySelector('[data-ack]').addEventListener('click', () => {
+    var overlay = document.createElement('div');
+    overlay.id = 'safety-stop-overlay';
+    overlay.className = 'safety-overlay';
+    overlay.innerHTML =
+      '<div class="safety-icon">&#x26A0;</div>' +
+      '<div class="safety-title">SAFETY STOP</div>' +
+      '<div class="safety-message">' + (message || 'Connection Lost — Pool has been stopped for safety.') + '</div>' +
+      '<button class="btn btn-lg" style="background:#fff;color:#E74C3C;font-weight:700;" id="safety-ack-btn">ACKNOWLEDGE</button>';
+
+    overlay.querySelector('#safety-ack-btn').addEventListener('click', function () {
       overlay.remove();
-      onAcknowledge?.();
     });
+
     document.body.appendChild(overlay);
     return overlay;
   }
 
-  function showSafetyStop(message, onAcknowledge) {
-    return createSafetyStopOverlay(message, onAcknowledge);
+  function updateExecution(container, workoutData) {
+    if (!container || !workoutData) return;
+
+    var gaugeEl = container.querySelector('.gauge-container');
+    if (gaugeEl) {
+      renderSpeedGauge(gaugeEl, workoutData.currentSpeed || 0, workoutData.maxSpeed || 100);
+    }
+
+    var timerEl = container.querySelector('.timer-container');
+    if (timerEl) {
+      updateTimer(timerEl, workoutData.totalElapsedMs || workoutData.elapsedMs || 0, workoutData.totalDurationMs);
+    }
+
+    var stepEl = container.querySelector('.step-container');
+    if (stepEl) {
+      var steps = workoutData.steps || (workoutData.program && workoutData.program.steps) || [];
+      updateStepProgress(
+        stepEl,
+        workoutData.currentStepIndex || workoutData.currentStep || 0,
+        steps.length || 1,
+        workoutData.currentSet || 0,
+        workoutData.totalSets || 0
+      );
+    }
+
+    var ctrlEl = container.querySelector('.ctrl-container');
+    if (ctrlEl) {
+      updateControlState(ctrlEl, workoutData.state || 'idle');
+    }
+
+    if (workoutData.state === 'SAFETY_STOP' || workoutData.state === 'safety_stop') {
+      renderSafetyStopOverlay(true, 'Safety stop activated.');
+    }
   }
 
   return {
-    createSpeedGauge,
-    updateSpeedGauge,
-    createTimerDisplay,
-    updateTimerDisplay,
-    createStepProgress,
-    updateStepProgress,
-    createControlButtons,
-    setControlState,
-    showKeypad,
-    showSafetyStop,
-    GAUGE_MIN,
-    GAUGE_MAX,
+    renderSpeedGauge: renderSpeedGauge,
+    renderTimer: renderTimer,
+    updateTimer: updateTimer,
+    renderStepProgress: renderStepProgress,
+    updateStepProgress: updateStepProgress,
+    renderControlButtons: renderControlButtons,
+    updateControlState: updateControlState,
+    renderNumericKeypad: renderNumericKeypad,
+    renderSafetyStopOverlay: renderSafetyStopOverlay,
+    updateExecution: updateExecution,
+    formatTime: formatTime,
+    formatTimeDetailed: formatTimeDetailed
   };
 })();

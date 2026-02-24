@@ -1,72 +1,174 @@
 /**
  * SwimEx EDGE — WebSocket Client
- * Auto-connect with token, reconnection, event handlers, connection status
+ * Auto-connect with JWT, exponential backoff reconnection, event emitter, keepalive.
  */
-
-const WebSocketClient = (function () {
+const EdgeWebSocket = (function () {
   'use strict';
 
   let ws = null;
   let reconnectAttempts = 0;
   let reconnectTimer = null;
-  let heartbeatTimer = null;
-  let heartbeatSequence = 0;
-  const MAX_RECONNECT_ATTEMPTS = 10;
-  const BASE_DELAY_MS = 1000;
-  const HEARTBEAT_INTERVAL_MS = 15000;
+  let keepaliveTimer = null;
+  let keepaliveSeq = 0;
+  let intentionalClose = false;
 
-  const listeners = {
-    workout: [],
-    tag: [],
-    keepalive: [],
-    connected: [],
-    disconnected: [],
-    error: [],
-  };
+  const MAX_RECONNECT_DELAY = 16000;
+  const BASE_DELAY = 1000;
+  const KEEPALIVE_MS = 5000;
 
-  function getWsUrl() {
-    if (typeof window === 'undefined') return '';
-    const { protocol, hostname, port } = window.location;
-    const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-    const portPart = port && !['80', '443'].includes(port) ? `:${port}` : '';
-    const token = typeof API !== 'undefined' && API.getToken ? API.getToken() : null;
-    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-    return `${wsProtocol}//${hostname}${portPart}/ws${qs}`;
+  const STATE = { DISCONNECTED: 'disconnected', CONNECTING: 'connecting', CONNECTED: 'connected' };
+  let connectionState = STATE.DISCONNECTED;
+
+  const listeners = {};
+  let onConnectionStatusChange = null;
+
+  function on(event, fn) {
+    if (!listeners[event]) listeners[event] = [];
+    listeners[event].push(fn);
+  }
+
+  function off(event, fn) {
+    if (!listeners[event]) return;
+    if (!fn) { listeners[event] = []; return; }
+    const idx = listeners[event].indexOf(fn);
+    if (idx >= 0) listeners[event].splice(idx, 1);
   }
 
   function emit(event, data) {
-    const list = listeners[event];
-    if (list) list.forEach((fn) => { try { fn(data); } catch (e) { console.error(e); } });
+    var fns = listeners[event];
+    if (fns) {
+      for (var i = 0; i < fns.length; i++) {
+        try { fns[i](data); } catch (e) { console.error('[WS] listener error:', e); }
+      }
+    }
+  }
+
+  function setConnectionState(state) {
+    if (connectionState === state) return;
+    connectionState = state;
+    if (typeof onConnectionStatusChange === 'function') {
+      onConnectionStatusChange(state);
+    }
+    emit('connection_status', { state: state });
+  }
+
+  function getWsUrl() {
+    var loc = window.location;
+    var proto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    var port = loc.port && !['80', '443'].includes(loc.port) ? ':' + loc.port : '';
+    return proto + '//' + loc.hostname + port + '/ws';
+  }
+
+  function startKeepalive() {
+    stopKeepalive();
+    keepaliveTimer = setInterval(function () {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        keepaliveSeq++;
+        sendRaw({
+          type: 'keepalive',
+          payload: { sequenceNumber: keepaliveSeq, timestamp: Date.now() },
+          timestamp: Date.now()
+        });
+      }
+    }, KEEPALIVE_MS);
+  }
+
+  function stopKeepalive() {
+    if (keepaliveTimer) {
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = null;
+    }
   }
 
   function scheduleReconnect() {
-    if (reconnectTimer) return;
-    const delay = Math.min(BASE_DELAY_MS * Math.pow(2, reconnectAttempts), 60000);
+    if (reconnectTimer || intentionalClose) return;
+    var delay = Math.min(BASE_DELAY * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
     reconnectAttempts++;
-    reconnectTimer = setTimeout(() => {
+    setConnectionState(STATE.CONNECTING);
+    reconnectTimer = setTimeout(function () {
       reconnectTimer = null;
       connect();
     }, delay);
   }
 
-  function startHeartbeat() {
-    stopHeartbeat();
-    heartbeatTimer = setInterval(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        heartbeatSequence++;
-        ws.send(JSON.stringify({
-          type: 'keepalive',
-          payload: { sequenceNumber: heartbeatSequence, timestamp: Date.now() },
-          timestamp: Date.now(),
-        }));
-      }
-    }, HEARTBEAT_INTERVAL_MS);
+  function sendRaw(msg) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
   }
 
-  function stopHeartbeat() {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
+  function authenticate(token) {
+    sendRaw({ type: 'authenticate', payload: { token: token }, timestamp: Date.now() });
+  }
+
+  function sendCommand(cmd, payload) {
+    sendRaw({
+      type: 'command',
+      payload: Object.assign({ command: cmd }, payload || {}),
+      timestamp: Date.now()
+    });
+  }
+
+  function subscribeTags(tags) {
+    sendRaw({ type: 'subscribe_tags', payload: { tags: tags }, timestamp: Date.now() });
+  }
+
+  function unsubscribeTags(tags) {
+    sendRaw({ type: 'unsubscribe_tags', payload: { tags: tags }, timestamp: Date.now() });
+  }
+
+  function sendKeepAlive() {
+    keepaliveSeq++;
+    sendRaw({
+      type: 'keepalive',
+      payload: { sequenceNumber: keepaliveSeq, timestamp: Date.now() },
+      timestamp: Date.now()
+    });
+  }
+
+  function handleMessage(ev) {
+    var msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+
+    var type = msg.type;
+    var payload = msg.payload || msg;
+
+    switch (type) {
+      case 'connected':
+        emit('connected', payload);
+        var token = typeof EdgeAPI !== 'undefined' ? EdgeAPI.getToken() : null;
+        if (token) authenticate(token);
+        break;
+      case 'authenticated':
+        emit('authenticated', payload);
+        break;
+      case 'workout_update':
+        emit('workout_update', payload);
+        break;
+      case 'tag_update':
+        emit('tag_update', payload);
+        break;
+      case 'connection_status':
+        emit('connection_status', payload);
+        break;
+      case 'safety_stop':
+        emit('safety_stop', payload);
+        break;
+      case 'keepalive':
+        emit('keepalive', payload);
+        break;
+      case 'error':
+        emit('error', payload);
+        break;
+      case 'command_ack':
+        emit('command_ack', payload);
+        break;
+      case 'command_error':
+        emit('command_error', payload);
+        break;
+      default:
+        emit(type, payload);
+        break;
     }
   }
 
@@ -74,107 +176,80 @@ const WebSocketClient = (function () {
     if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
       return;
     }
+    intentionalClose = false;
+    setConnectionState(STATE.CONNECTING);
 
-    const url = getWsUrl();
+    var url = getWsUrl();
+    var token = typeof EdgeAPI !== 'undefined' ? EdgeAPI.getToken() : null;
+    if (token) url += '?token=' + encodeURIComponent(token);
+
     try {
       ws = new WebSocket(url);
     } catch (e) {
-      emit('error', e);
+      emit('error', { message: 'WebSocket creation failed', error: e });
       scheduleReconnect();
       return;
     }
 
-    ws.onopen = () => {
+    ws.onopen = function () {
       reconnectAttempts = 0;
-      startHeartbeat();
+      setConnectionState(STATE.CONNECTED);
+      startKeepalive();
       emit('connected', {});
     };
 
-    ws.onclose = () => {
-      stopHeartbeat();
+    ws.onclose = function () {
+      stopKeepalive();
+      setConnectionState(STATE.DISCONNECTED);
       emit('disconnected', {});
       scheduleReconnect();
     };
 
-    ws.onerror = (e) => {
-      emit('error', e);
+    ws.onerror = function (e) {
+      emit('error', { message: 'WebSocket error', error: e });
     };
 
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        switch (msg.type) {
-          case 'connected':
-            emit('connected', msg.payload);
-            break;
-          case 'workout_update':
-            emit('workout', msg.payload);
-            break;
-          case 'tag_update':
-            emit('tag', msg.payload);
-            break;
-          case 'keepalive':
-            emit('keepalive', msg.payload);
-            break;
-          case 'authenticated':
-          case 'auth_error':
-          case 'error':
-            emit('workout', msg);
-            break;
-          default:
-            emit('workout', msg);
-        }
-      } catch (e) {
-        console.error('WS message parse error', e);
-      }
-    };
+    ws.onmessage = handleMessage;
   }
 
   function disconnect() {
+    intentionalClose = true;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    stopHeartbeat();
+    stopKeepalive();
     if (ws) {
       ws.close();
       ws = null;
     }
-    reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
-  }
-
-  function send(msg) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
-    }
-  }
-
-  function sendCommand(command, payload = {}) {
-    send({ type: 'command', payload: { command, ...payload }, timestamp: Date.now() });
+    reconnectAttempts = 0;
+    setConnectionState(STATE.DISCONNECTED);
   }
 
   function isConnected() {
-    return ws && ws.readyState === WebSocket.OPEN;
+    return ws !== null && ws.readyState === WebSocket.OPEN;
   }
 
-  function on(event, fn) {
-    if (listeners[event]) listeners[event].push(fn);
-  }
-
-  function off(event, fn) {
-    if (!listeners[event]) return;
-    const i = listeners[event].indexOf(fn);
-    if (i >= 0) listeners[event].splice(i, 1);
+  function getState() {
+    return connectionState;
   }
 
   return {
-    connect,
-    disconnect,
-    send,
-    sendCommand,
-    isConnected,
-    on,
-    off,
-    getReconnectAttempts: () => reconnectAttempts,
+    connect: connect,
+    disconnect: disconnect,
+    isConnected: isConnected,
+    getState: getState,
+    authenticate: authenticate,
+    sendCommand: sendCommand,
+    subscribeTags: subscribeTags,
+    unsubscribeTags: unsubscribeTags,
+    sendKeepAlive: sendKeepAlive,
+    on: on,
+    off: off,
+    emit: emit,
+    STATE: STATE,
+    set onConnectionStatusChange(fn) { onConnectionStatusChange = fn; },
+    get onConnectionStatusChange() { return onConnectionStatusChange; }
   };
 })();

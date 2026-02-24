@@ -1,205 +1,390 @@
 /**
  * SwimEx EDGE — REST API Client
- * Base URL detection, token management, auth, workouts, admin
+ * Full-featured API client with auth, workouts, programs, admin, and graphics.
  */
-
-const API = (function () {
+const EdgeAPI = (function () {
   'use strict';
 
-  // Base URL: same origin when served by Express
-  const getBaseUrl = () => {
+  const TOKEN_KEY = 'swimex_token';
+  const USER_KEY = 'swimex_user';
+
+  function getBaseUrl() {
     if (typeof window === 'undefined') return '';
     const { protocol, hostname, port } = window.location;
-    const portPart = port && !['80', '443'].includes(port) ? `:${port}` : '';
-    return `${protocol}//${hostname}${portPart}`;
-  };
-
-  const TOKEN_KEY = 'swimex_token';
+    const p = port && !['80', '443'].includes(port) ? ':' + port : '';
+    return protocol + '//' + hostname + p;
+  }
 
   function getToken() {
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
+    try { return localStorage.getItem(TOKEN_KEY); }
+    catch { return null; }
   }
 
   function setToken(token) {
     try {
       if (token) localStorage.setItem(TOKEN_KEY, token);
       else localStorage.removeItem(TOKEN_KEY);
-    } catch (e) {
-      console.warn('localStorage unavailable', e);
-    }
+    } catch (_) {}
   }
 
-  async function request(method, path, body = null, options = {}) {
-    const url = `${getBaseUrl()}${path}`;
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-    const token = getToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  function getCachedUser() {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
 
-    const config = { method, headers };
-    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      config.body = JSON.stringify(body);
+  function setCachedUser(user) {
+    try {
+      if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+      else localStorage.removeItem(USER_KEY);
+    } catch (_) {}
+  }
+
+  function isLoggedIn() {
+    return !!getToken();
+  }
+
+  function getRole() {
+    const u = getCachedUser();
+    return u ? u.role : null;
+  }
+
+  async function request(method, path, body, opts) {
+    opts = opts || {};
+    const url = getBaseUrl() + path;
+    const headers = Object.assign({}, opts.headers || {});
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    if (!opts.raw) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const config = { method: method, headers: headers };
+
+    if (body !== undefined && body !== null) {
+      if (opts.raw) {
+        config.body = body;
+        delete headers['Content-Type'];
+      } else {
+        config.body = JSON.stringify(body);
+      }
     }
 
     const res = await fetch(url, config);
-    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 204) return {};
+
+    let data;
+    try { data = await res.json(); }
+    catch { data = {}; }
 
     if (!res.ok) {
-      const err = new Error(data.error?.message || res.statusText || 'Request failed');
+      const err = new Error(
+        (data.error && data.error.message) || data.message || res.statusText || 'Request failed'
+      );
       err.status = res.status;
-      err.code = data.error?.code;
+      err.code = data.error ? data.error.code : undefined;
+      err.data = data;
+      if (res.status === 401) {
+        setToken(null);
+        setCachedUser(null);
+      }
       throw err;
     }
 
-    return data;
+    return data.data !== undefined ? data.data : data;
   }
 
   return {
-    getBaseUrl,
-    getToken,
-    setToken,
+    getBaseUrl: getBaseUrl,
+    getToken: getToken,
+    setToken: setToken,
+    isLoggedIn: isLoggedIn,
+    getRole: getRole,
+    getCachedUser: getCachedUser,
 
-    // Auth
+    // ---- Auth ----
     async login(username, password) {
-      const { data } = await request('POST', '/api/auth/login', { username, password });
-      if (data.token) setToken(data.token);
-      return data;
+      const d = await request('POST', '/api/auth/login', { username: username, password: password });
+      const result = d.token ? d : (d.data || d);
+      if (result.token) setToken(result.token);
+      if (result.user) setCachedUser(result.user);
+      return result;
     },
 
-    async register(username, password, displayName, email) {
-      const { data } = await request('POST', '/api/auth/register', {
-        username,
-        password,
-        displayName: displayName || username,
-        email: email || null,
+    async register(username, password, displayName) {
+      const d = await request('POST', '/api/auth/register', {
+        username: username,
+        password: password,
+        displayName: displayName || username
       });
-      if (data.token) setToken(data.token);
-      return data;
+      const result = d.token ? d : (d.data || d);
+      if (result.token) setToken(result.token);
+      if (result.user) setCachedUser(result.user);
+      return result;
     },
 
     async logout() {
-      try {
-        await request('POST', '/api/auth/logout');
-      } finally {
-        setToken(null);
-      }
+      try { await request('POST', '/api/auth/logout'); }
+      catch (_) {}
+      setToken(null);
+      setCachedUser(null);
     },
 
     async getProfile() {
-      const { data } = await request('GET', '/api/auth/me');
-      return data;
+      const d = await request('GET', '/api/auth/me');
+      if (d && d.user) setCachedUser(d.user);
+      else if (d && d.username) setCachedUser(d);
+      return d;
     },
 
     async updatePreferences(prefs) {
-      const { data } = await request('PUT', '/api/auth/me/preferences', prefs);
-      return data;
+      return await request('PUT', '/api/auth/me/preferences', prefs);
     },
 
-    // Workout control
-    async quickStart(speed, timeMs) {
-      const { data } = await request('POST', '/api/workouts/quick-start', { speed, timeMs });
-      return data;
+    // ---- Commission ----
+    async isCommissioned() {
+      return await request('GET', '/api/commission/status');
+    },
+
+    async commission(data) {
+      return await request('POST', '/api/commission', data);
+    },
+
+    async resetSuperAdmin(data) {
+      return await request('POST', '/api/commission/reset-super-admin', data);
+    },
+
+    // ---- Workout Control ----
+    async quickStart(speed, durationMs) {
+      return await request('POST', '/api/workouts/quick-start', {
+        speed: speed,
+        timeMs: durationMs
+      });
     },
 
     async startProgram(programId) {
-      const { data } = await request('POST', '/api/workouts/start-program', { programId });
-      return data;
+      return await request('POST', '/api/workouts/start-program', { programId: programId });
+    },
+
+    async startPreset(type, level) {
+      return await request('POST', '/api/workouts/start-preset', { type: type, level: level });
+    },
+
+    async startInterval(sets, step1, step2) {
+      return await request('POST', '/api/workouts/start-interval', {
+        sets: sets,
+        step1: step1,
+        step2: step2
+      });
     },
 
     async pause() {
-      const { data } = await request('POST', '/api/workouts/pause');
-      return data;
+      return await request('POST', '/api/workouts/pause');
     },
 
     async resume() {
-      const { data } = await request('POST', '/api/workouts/resume');
-      return data;
+      return await request('POST', '/api/workouts/resume');
     },
 
     async stop() {
-      await request('POST', '/api/workouts/stop');
+      return await request('POST', '/api/workouts/stop');
     },
 
     async setSpeed(speed) {
-      const { data } = await request('POST', '/api/workouts/set-speed', { speed });
-      return data;
+      return await request('POST', '/api/workouts/set-speed', { speed: speed });
     },
 
     async adjustSpeed(delta) {
-      await request('POST', '/api/workouts/adjust-speed', { delta });
+      return await request('POST', '/api/workouts/adjust-speed', { delta: delta });
     },
 
-    async getActiveWorkout() {
-      const { data } = await request('GET', '/api/workouts/active');
-      return data;
+    async getActive() {
+      return await request('GET', '/api/workouts/active');
     },
 
-    // Program CRUD
-    async getPrograms() {
-      const { data } = await request('GET', '/api/workouts/programs');
-      return data;
+    // ---- Programs ----
+    async listPrograms() {
+      return await request('GET', '/api/workouts/programs');
     },
 
     async getProgram(id) {
-      const { data } = await request('GET', `/api/workouts/programs/${id}`);
-      return data;
+      return await request('GET', '/api/workouts/programs/' + id);
     },
 
-    async createProgram(program) {
-      const { data } = await request('POST', '/api/workouts/programs', program);
-      return data;
+    async createProgram(data) {
+      return await request('POST', '/api/workouts/programs', data);
     },
 
-    async updateProgram(id, updates) {
-      const { data } = await request('PUT', `/api/workouts/programs/${id}`, updates);
-      return data;
+    async updateProgram(id, data) {
+      return await request('PUT', '/api/workouts/programs/' + id, data);
+    },
+
+    async cloneProgram(id, name) {
+      return await request('POST', '/api/workouts/programs/' + id + '/clone', { name: name });
     },
 
     async deleteProgram(id) {
-      await request('DELETE', `/api/workouts/programs/${id}`);
+      return await request('DELETE', '/api/workouts/programs/' + id);
     },
 
+    // ---- History ----
+    async getHistory(limit, offset) {
+      const q = [];
+      if (limit) q.push('limit=' + limit);
+      if (offset) q.push('offset=' + offset);
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/workouts/history' + qs);
+    },
+
+    async getStats() {
+      return await request('GET', '/api/workouts/stats');
+    },
+
+    // ---- Presets ----
     async getPresets() {
-      const { data } = await request('GET', '/api/workouts/presets');
-      return data;
+      return await request('GET', '/api/workouts/presets');
     },
 
-    // Admin
-    async listUsers(role) {
-      const q = role ? `?role=${encodeURIComponent(role)}` : '';
-      const { data } = await request('GET', `/api/users${q}`);
-      return data;
+    // ---- Admin: Dashboard ----
+    async getDashboard() {
+      return await request('GET', '/api/admin/dashboard');
+    },
+
+    // ---- Admin: Users ----
+    async listUsers() {
+      return await request('GET', '/api/users');
+    },
+
+    async createUser(data) {
+      return await request('POST', '/api/users', data);
     },
 
     async updateRole(userId, role) {
-      const { data } = await request('PUT', `/api/users/${userId}/role`, { role });
-      return data;
+      return await request('PUT', '/api/users/' + userId + '/role', { role: role });
     },
 
+    async disableUser(userId) {
+      return await request('POST', '/api/users/' + userId + '/disable');
+    },
+
+    async enableUser(userId) {
+      return await request('POST', '/api/users/' + userId + '/enable');
+    },
+
+    async deleteUser(userId) {
+      return await request('DELETE', '/api/users/' + userId);
+    },
+
+    // ---- Admin: Devices ----
     async listDevices() {
-      const { data } = await request('GET', '/api/admin/devices');
-      return data;
+      return await request('GET', '/api/admin/devices');
     },
 
-    async registerDevice(macAddress, deviceName, deviceType) {
-      const { data } = await request('POST', '/api/admin/devices', {
-        macAddress,
-        deviceName: deviceName || 'Tablet',
-        deviceType: deviceType || 'TABLET',
+    async registerDevice(mac, name, type) {
+      return await request('POST', '/api/admin/devices', {
+        macAddress: mac,
+        deviceName: name || 'Tablet',
+        deviceType: type || 'TABLET'
       });
-      return data;
     },
 
-    // Health
-    async healthCheck() {
-      const { data } = await request('GET', '/api/health');
-      return data;
+    async revokeDevice(id) {
+      return await request('DELETE', '/api/admin/devices/' + id);
     },
+
+    // ---- Admin: Communication ----
+    async listCommConfigs() {
+      return await request('GET', '/api/admin/communication');
+    },
+
+    // ---- Admin: Tags ----
+    async listTagMappings() {
+      return await request('GET', '/api/admin/tags');
+    },
+
+    async createTagMapping(data) {
+      return await request('POST', '/api/admin/tags', data);
+    },
+
+    async deleteTagMapping(id) {
+      return await request('DELETE', '/api/admin/tags/' + id);
+    },
+
+    // ---- Admin: Feature Flags ----
+    async getFeatureFlags() {
+      return await request('GET', '/api/admin/features');
+    },
+
+    async setFeatureFlag(key, enabled, visible) {
+      return await request('PUT', '/api/admin/features/' + key, {
+        enabled: enabled,
+        visible: visible
+      });
+    },
+
+    // ---- Admin: Layouts ----
+    async listLayouts() {
+      return await request('GET', '/api/admin/layouts');
+    },
+
+    async getActiveLayout() {
+      return await request('GET', '/api/admin/layouts/active');
+    },
+
+    async createLayout(data) {
+      return await request('POST', '/api/admin/layouts', data);
+    },
+
+    async publishLayout(id) {
+      return await request('POST', '/api/admin/layouts/' + id + '/publish');
+    },
+
+    // ---- Admin: Audit Log ----
+    async getAuditLog(params) {
+      const q = [];
+      if (params) {
+        Object.keys(params).forEach(function (k) {
+          if (params[k] !== undefined && params[k] !== null) {
+            q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+          }
+        });
+      }
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/admin/audit' + qs);
+    },
+
+    // ---- Graphics ----
+    async listGraphics(params) {
+      const q = [];
+      if (params) {
+        Object.keys(params).forEach(function (k) {
+          if (params[k] !== undefined && params[k] !== null) {
+            q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+          }
+        });
+      }
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/admin/graphics' + qs);
+    },
+
+    async getGraphic(id) {
+      return await request('GET', '/api/admin/graphics/' + id);
+    },
+
+    async uploadGraphic(formData) {
+      return await request('POST', '/api/admin/graphics', formData, { raw: true });
+    },
+
+    async deleteGraphic(id) {
+      return await request('DELETE', '/api/admin/graphics/' + id);
+    },
+
+    // ---- Health ----
+    async check() {
+      return await request('GET', '/api/health');
+    }
   };
 })();
