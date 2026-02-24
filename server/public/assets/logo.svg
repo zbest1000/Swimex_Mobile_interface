@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 60" width="200" height="60">
+  <defs>
+    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#62B6CB"/>
+      <stop offset="50%" style="stop-color:#1B4965"/>
+      <stop offset="100%" style="stop-color:#62B6CB"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1B4965"/>
+      <stop offset="100%" style="stop-color:#62B6CB"/>
+    </linearGradient>
+  </defs>
+  <path d="M8 38 Q16 28 24 38 Q32 48 40 38 Q48 28 56 38" fill="none" stroke="url(#waveGrad)" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M12 46 Q20 37 28 46 Q36 55 44 46 Q52 37 60 46" fill="none" stroke="url(#waveGrad)" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <path d="M4 30 Q12 20 20 30 Q28 40 36 30" fill="none" stroke="url(#waveGrad)" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <text x="100" y="30" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="20" font-weight="800" fill="currentColor" letter-spacing="0.5">
+    <tspan fill="url(#textGrad)">Swim</tspan><tspan fill="url(#textGrad)">Ex</tspan>
+  </text>
+  <text x="100" y="48" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="13" font-weight="600" fill="currentColor" letter-spacing="3" opacity="0.85">EDGE</text>
+</svg>

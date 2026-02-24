@@ -1,0 +1,390 @@
+/**
+ * SwimEx EDGE — REST API Client
+ * Full-featured API client with auth, workouts, programs, admin, and graphics.
+ */
+const EdgeAPI = (function () {
+  'use strict';
+
+  const TOKEN_KEY = 'swimex_token';
+  const USER_KEY = 'swimex_user';
+
+  function getBaseUrl() {
+    if (typeof window === 'undefined') return '';
+    const { protocol, hostname, port } = window.location;
+    const p = port && !['80', '443'].includes(port) ? ':' + port : '';
+    return protocol + '//' + hostname + p;
+  }
+
+  function getToken() {
+    try { return localStorage.getItem(TOKEN_KEY); }
+    catch { return null; }
+  }
+
+  function setToken(token) {
+    try {
+      if (token) localStorage.setItem(TOKEN_KEY, token);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (_) {}
+  }
+
+  function getCachedUser() {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function setCachedUser(user) {
+    try {
+      if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+      else localStorage.removeItem(USER_KEY);
+    } catch (_) {}
+  }
+
+  function isLoggedIn() {
+    return !!getToken();
+  }
+
+  function getRole() {
+    const u = getCachedUser();
+    return u ? u.role : null;
+  }
+
+  async function request(method, path, body, opts) {
+    opts = opts || {};
+    const url = getBaseUrl() + path;
+    const headers = Object.assign({}, opts.headers || {});
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    if (!opts.raw) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const config = { method: method, headers: headers };
+
+    if (body !== undefined && body !== null) {
+      if (opts.raw) {
+        config.body = body;
+        delete headers['Content-Type'];
+      } else {
+        config.body = JSON.stringify(body);
+      }
+    }
+
+    const res = await fetch(url, config);
+
+    if (res.status === 204) return {};
+
+    let data;
+    try { data = await res.json(); }
+    catch { data = {}; }
+
+    if (!res.ok) {
+      const err = new Error(
+        (data.error && data.error.message) || data.message || res.statusText || 'Request failed'
+      );
+      err.status = res.status;
+      err.code = data.error ? data.error.code : undefined;
+      err.data = data;
+      if (res.status === 401) {
+        setToken(null);
+        setCachedUser(null);
+      }
+      throw err;
+    }
+
+    return data.data !== undefined ? data.data : data;
+  }
+
+  return {
+    getBaseUrl: getBaseUrl,
+    getToken: getToken,
+    setToken: setToken,
+    isLoggedIn: isLoggedIn,
+    getRole: getRole,
+    getCachedUser: getCachedUser,
+
+    // ---- Auth ----
+    async login(username, password) {
+      const d = await request('POST', '/api/auth/login', { username: username, password: password });
+      const result = d.token ? d : (d.data || d);
+      if (result.token) setToken(result.token);
+      if (result.user) setCachedUser(result.user);
+      return result;
+    },
+
+    async register(username, password, displayName) {
+      const d = await request('POST', '/api/auth/register', {
+        username: username,
+        password: password,
+        displayName: displayName || username
+      });
+      const result = d.token ? d : (d.data || d);
+      if (result.token) setToken(result.token);
+      if (result.user) setCachedUser(result.user);
+      return result;
+    },
+
+    async logout() {
+      try { await request('POST', '/api/auth/logout'); }
+      catch (_) {}
+      setToken(null);
+      setCachedUser(null);
+    },
+
+    async getProfile() {
+      const d = await request('GET', '/api/auth/me');
+      if (d && d.user) setCachedUser(d.user);
+      else if (d && d.username) setCachedUser(d);
+      return d;
+    },
+
+    async updatePreferences(prefs) {
+      return await request('PUT', '/api/auth/me/preferences', prefs);
+    },
+
+    // ---- Commission ----
+    async isCommissioned() {
+      return await request('GET', '/api/commission/status');
+    },
+
+    async commission(data) {
+      return await request('POST', '/api/commission', data);
+    },
+
+    async resetSuperAdmin(data) {
+      return await request('POST', '/api/commission/reset-super-admin', data);
+    },
+
+    // ---- Workout Control ----
+    async quickStart(speed, durationMs) {
+      return await request('POST', '/api/workouts/quick-start', {
+        speed: speed,
+        timeMs: durationMs
+      });
+    },
+
+    async startProgram(programId) {
+      return await request('POST', '/api/workouts/start-program', { programId: programId });
+    },
+
+    async startPreset(type, level) {
+      return await request('POST', '/api/workouts/start-preset', { type: type, level: level });
+    },
+
+    async startInterval(sets, step1, step2) {
+      return await request('POST', '/api/workouts/start-interval', {
+        sets: sets,
+        step1: step1,
+        step2: step2
+      });
+    },
+
+    async pause() {
+      return await request('POST', '/api/workouts/pause');
+    },
+
+    async resume() {
+      return await request('POST', '/api/workouts/resume');
+    },
+
+    async stop() {
+      return await request('POST', '/api/workouts/stop');
+    },
+
+    async setSpeed(speed) {
+      return await request('POST', '/api/workouts/set-speed', { speed: speed });
+    },
+
+    async adjustSpeed(delta) {
+      return await request('POST', '/api/workouts/adjust-speed', { delta: delta });
+    },
+
+    async getActive() {
+      return await request('GET', '/api/workouts/active');
+    },
+
+    // ---- Programs ----
+    async listPrograms() {
+      return await request('GET', '/api/workouts/programs');
+    },
+
+    async getProgram(id) {
+      return await request('GET', '/api/workouts/programs/' + id);
+    },
+
+    async createProgram(data) {
+      return await request('POST', '/api/workouts/programs', data);
+    },
+
+    async updateProgram(id, data) {
+      return await request('PUT', '/api/workouts/programs/' + id, data);
+    },
+
+    async cloneProgram(id, name) {
+      return await request('POST', '/api/workouts/programs/' + id + '/clone', { name: name });
+    },
+
+    async deleteProgram(id) {
+      return await request('DELETE', '/api/workouts/programs/' + id);
+    },
+
+    // ---- History ----
+    async getHistory(limit, offset) {
+      const q = [];
+      if (limit) q.push('limit=' + limit);
+      if (offset) q.push('offset=' + offset);
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/workouts/history' + qs);
+    },
+
+    async getStats() {
+      return await request('GET', '/api/workouts/stats');
+    },
+
+    // ---- Presets ----
+    async getPresets() {
+      return await request('GET', '/api/workouts/presets');
+    },
+
+    // ---- Admin: Dashboard ----
+    async getDashboard() {
+      return await request('GET', '/api/admin/dashboard');
+    },
+
+    // ---- Admin: Users ----
+    async listUsers() {
+      return await request('GET', '/api/users');
+    },
+
+    async createUser(data) {
+      return await request('POST', '/api/users', data);
+    },
+
+    async updateRole(userId, role) {
+      return await request('PUT', '/api/users/' + userId + '/role', { role: role });
+    },
+
+    async disableUser(userId) {
+      return await request('POST', '/api/users/' + userId + '/disable');
+    },
+
+    async enableUser(userId) {
+      return await request('POST', '/api/users/' + userId + '/enable');
+    },
+
+    async deleteUser(userId) {
+      return await request('DELETE', '/api/users/' + userId);
+    },
+
+    // ---- Admin: Devices ----
+    async listDevices() {
+      return await request('GET', '/api/admin/devices');
+    },
+
+    async registerDevice(mac, name, type) {
+      return await request('POST', '/api/admin/devices', {
+        macAddress: mac,
+        deviceName: name || 'Tablet',
+        deviceType: type || 'TABLET'
+      });
+    },
+
+    async revokeDevice(id) {
+      return await request('DELETE', '/api/admin/devices/' + id);
+    },
+
+    // ---- Admin: Communication ----
+    async listCommConfigs() {
+      return await request('GET', '/api/admin/communication');
+    },
+
+    // ---- Admin: Tags ----
+    async listTagMappings() {
+      return await request('GET', '/api/admin/tags');
+    },
+
+    async createTagMapping(data) {
+      return await request('POST', '/api/admin/tags', data);
+    },
+
+    async deleteTagMapping(id) {
+      return await request('DELETE', '/api/admin/tags/' + id);
+    },
+
+    // ---- Admin: Feature Flags ----
+    async getFeatureFlags() {
+      return await request('GET', '/api/admin/features');
+    },
+
+    async setFeatureFlag(key, enabled, visible) {
+      return await request('PUT', '/api/admin/features/' + key, {
+        enabled: enabled,
+        visible: visible
+      });
+    },
+
+    // ---- Admin: Layouts ----
+    async listLayouts() {
+      return await request('GET', '/api/admin/layouts');
+    },
+
+    async getActiveLayout() {
+      return await request('GET', '/api/admin/layouts/active');
+    },
+
+    async createLayout(data) {
+      return await request('POST', '/api/admin/layouts', data);
+    },
+
+    async publishLayout(id) {
+      return await request('POST', '/api/admin/layouts/' + id + '/publish');
+    },
+
+    // ---- Admin: Audit Log ----
+    async getAuditLog(params) {
+      const q = [];
+      if (params) {
+        Object.keys(params).forEach(function (k) {
+          if (params[k] !== undefined && params[k] !== null) {
+            q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+          }
+        });
+      }
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/admin/audit' + qs);
+    },
+
+    // ---- Graphics ----
+    async listGraphics(params) {
+      const q = [];
+      if (params) {
+        Object.keys(params).forEach(function (k) {
+          if (params[k] !== undefined && params[k] !== null) {
+            q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+          }
+        });
+      }
+      const qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/admin/graphics' + qs);
+    },
+
+    async getGraphic(id) {
+      return await request('GET', '/api/admin/graphics/' + id);
+    },
+
+    async uploadGraphic(formData) {
+      return await request('POST', '/api/admin/graphics', formData, { raw: true });
+    },
+
+    async deleteGraphic(id) {
+      return await request('DELETE', '/api/admin/graphics/' + id);
+    },
+
+    // ---- Health ----
+    async check() {
+      return await request('GET', '/api/health');
+    }
+  };
+})();

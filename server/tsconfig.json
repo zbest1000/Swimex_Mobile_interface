@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "baseUrl": "./src",
+    "paths": {
+      "@app/*": ["app/*"],
+      "@auth/*": ["auth/*"],
+      "@mqtt/*": ["mqtt/*"],
+      "@modbus/*": ["modbus/*"],
+      "@http/*": ["http/*"],
+      "@communication/*": ["communication/*"],
+      "@database/*": ["database/*"],
+      "@graphics/*": ["graphics/*"],
+      "@workouts/*": ["workouts/*"],
+      "@admin/*": ["admin/*"],
+      "@tags/*": ["tags/*"],
+      "@websocket/*": ["websocket/*"],
+      "@utils/*": ["utils/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "tests"]
+}

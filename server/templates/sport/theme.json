@@ -1,0 +1,48 @@
+{
+  "id": "sport",
+  "name": "Sport",
+  "description": "Dynamic, energetic design with performance-oriented gauges, dark backgrounds, neon accents",
+  "bestFor": "Competitive swim training facilities",
+  "colors": {
+    "primary": "#1A1A2E",
+    "primaryLight": "#16213E",
+    "primaryDark": "#0F0F1A",
+    "secondary": "#00E676",
+    "accent": "#00BCD4",
+    "background": "#0A0A14",
+    "surface": "#1A1A2E",
+    "text": "#EAEAEA",
+    "textSecondary": "#8E8E8E",
+    "error": "#FF1744",
+    "success": "#00E676",
+    "warning": "#FF9100",
+    "divider": "#2A2A3E"
+  },
+  "darkColors": {
+    "primary": "#1A1A2E",
+    "primaryLight": "#16213E",
+    "primaryDark": "#0F0F1A",
+    "secondary": "#00E676",
+    "accent": "#00BCD4",
+    "background": "#050508",
+    "surface": "#121220",
+    "text": "#F5F5F5",
+    "textSecondary": "#AAAAAA",
+    "error": "#FF1744",
+    "success": "#00E676",
+    "warning": "#FF9100",
+    "divider": "#1A1A2E"
+  },
+  "typography": {
+    "fontFamily": "'Rajdhani', 'Roboto Condensed', sans-serif",
+    "headingSize": "34px",
+    "bodySize": "17px",
+    "buttonSize": "20px"
+  },
+  "layout": {
+    "borderRadius": "6px",
+    "cardElevation": "0 0 20px rgba(0,230,118,0.1)",
+    "spacing": "18px",
+    "buttonMinHeight": "56px"
+  }
+}

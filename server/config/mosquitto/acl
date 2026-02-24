@@ -1,0 +1,26 @@
+# Eclipse Mosquitto ACL Configuration for SwimEx EDGE
+# =====================================================
+# Pattern substitution: %u = username, %c = clientID
+
+# Edge server has full access to all swimex topics
+user edge-server
+topic readwrite swimex/#
+topic readwrite $SYS/#
+
+# PLC controllers can publish status and subscribe to commands
+user plc-controller
+topic readwrite swimex/+/status/#
+topic readwrite swimex/+/command/#
+topic readwrite swimex/+/keepalive
+
+# Edge clients (tablets) get read access to status, write to commands
+user edge-client
+topic read swimex/+/status/#
+topic write swimex/+/command/#
+topic readwrite swimex/+/keepalive
+
+# External SCADA/BMS read-only access to status
+user scada-client
+topic read swimex/+/status/#
+
+# Default: deny all not explicitly allowed

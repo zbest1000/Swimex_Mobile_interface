@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  # Eclipse Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: edge-mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ../config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../config/mosquitto/acl:/mosquitto/config/acl:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/#' -C 1 -W 3 -u edge-server -P edge-server-secret 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - edge-internal
+
+  # SwimEx EDGE Server
+  edge-server:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    container_name: edge-server
+    ports:
+      - "80:80"
+      - "502:502"
+    volumes:
+      - edge-data:/data
+      - edge-config:/config
+    environment:
+      - HTTP_PORT=80
+      - MODBUS_PORT=502
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=edge-server
+      - MQTT_PASS=edge-server-secret
+      - ADMIN_USER=admin
+      - ADMIN_PASS=changeme
+      - POOL_ID=default
+      - LOG_LEVEL=info
+      - DATA_DIR=/data
+      - CONFIG_DIR=/config
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - edge-internal
+
+volumes:
+  edge-data:
+  edge-config:
+  mosquitto-data:
+  mosquitto-log:
+
+networks:
+  edge-internal:
+    driver: bridge

@@ -1,0 +1,48 @@
+{
+  "id": "clinical",
+  "name": "Clinical",
+  "description": "High-contrast, accessibility-focused with large fonts, clear iconography, WCAG AA compliance",
+  "bestFor": "Medical/rehab environments with older or visually impaired users",
+  "colors": {
+    "primary": "#005A9C",
+    "primaryLight": "#0078D4",
+    "primaryDark": "#003F6B",
+    "secondary": "#107C10",
+    "accent": "#0078D4",
+    "background": "#FFFFFF",
+    "surface": "#F3F3F3",
+    "text": "#000000",
+    "textSecondary": "#3B3B3B",
+    "error": "#C50F1F",
+    "success": "#107C10",
+    "warning": "#9D5D00",
+    "divider": "#C8C8C8"
+  },
+  "darkColors": {
+    "primary": "#4FC3F7",
+    "primaryLight": "#81D4FA",
+    "primaryDark": "#0288D1",
+    "secondary": "#66BB6A",
+    "accent": "#4FC3F7",
+    "background": "#000000",
+    "surface": "#1A1A1A",
+    "text": "#FFFFFF",
+    "textSecondary": "#C8C8C8",
+    "error": "#F44336",
+    "success": "#4CAF50",
+    "warning": "#FFB300",
+    "divider": "#3B3B3B"
+  },
+  "typography": {
+    "fontFamily": "'Arial', 'Helvetica Neue', sans-serif",
+    "headingSize": "36px",
+    "bodySize": "20px",
+    "buttonSize": "22px"
+  },
+  "layout": {
+    "borderRadius": "8px",
+    "cardElevation": "0 2px 4px rgba(0,0,0,0.2)",
+    "spacing": "24px",
+    "buttonMinHeight": "64px"
+  }
+}
