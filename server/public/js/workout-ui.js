@@ -73,8 +73,8 @@ const WorkoutUI = (function () {
 
     var needleAngle = startAngle - sweepAngle;
     var needleTip = polarToXYR(needleAngle, r - 18);
-    var needleBase1 = polarToXYR(needleAngle + 90, 5);
-    var needleBase2 = polarToXYR(needleAngle - 90, 5);
+    var needleBase1 = polarToXYR(needleAngle + 90, 8);
+    var needleBase2 = polarToXYR(needleAngle - 90, 8);
 
     var color;
     if (pct < 0.33) color = 'var(--color-success)';
@@ -83,7 +83,7 @@ const WorkoutUI = (function () {
     else color = 'var(--color-danger)';
 
     container.innerHTML =
-      '<svg class="speed-gauge" viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg">' +
+      '<svg class="speed-gauge" viewBox="0 0 300 210" xmlns="http://www.w3.org/2000/svg">' +
         '<defs>' +
           '<linearGradient id="gaugeArc" x1="0%" y1="0%" x2="100%" y2="0%">' +
             '<stop offset="0%" style="stop-color:var(--color-success)"/>' +
@@ -100,8 +100,8 @@ const WorkoutUI = (function () {
           ' fill="' + color + '" class="gauge-needle"/>' +
         '<circle cx="' + cx + '" cy="' + cy + '" r="8" fill="var(--color-bg-elevated)"/>' +
         '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="' + color + '"/>' +
-        '<text x="' + cx + '" y="' + (cy - 30) + '" text-anchor="middle" class="gauge-value">' + Math.round(speed) + '</text>' +
-        '<text x="' + cx + '" y="' + (cy - 10) + '" text-anchor="middle" class="gauge-unit">% speed</text>' +
+        '<text x="' + cx + '" y="' + (cy + 35) + '" text-anchor="middle" class="gauge-value">' + Math.round(speed) + '</text>' +
+        '<text x="' + cx + '" y="' + (cy + 55) + '" text-anchor="middle" class="gauge-unit">% speed</text>' +
       '</svg>';
   }
 

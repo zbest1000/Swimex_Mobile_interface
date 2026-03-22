@@ -580,7 +580,11 @@ var EdgeApp = (function () {
       var steps = collectSteps();
       if (steps.length === 0) { toast('Add at least one step', 'warning'); return; }
 
-      var data = { name: name, sets: sets, steps: steps };
+      var apiSteps = steps.map(function(s) {
+        var totalSec = Math.round(s.durationSec);
+        return { speed: s.speed, minutes: Math.floor(totalSec / 60), seconds: totalSec % 60 };
+      });
+      var data = { name: name, type: 'CUSTOM', sets: sets, steps: apiSteps };
       var promise = cpEditId
         ? EdgeAPI.updateProgram(cpEditId, data)
         : EdgeAPI.createProgram(data);
@@ -681,7 +685,7 @@ var EdgeApp = (function () {
         var durInput = $('[data-field="duration"][data-row="' + i + '"]');
         if (i < steps.length) {
           if (speedInput) speedInput.value = steps[i].speed || '';
-          if (durInput) durInput.value = steps[i].durationSec || steps[i].duration || '';
+          if (durInput) durInput.value = steps[i].durationSec || ((steps[i].minutes || 0) * 60 + (steps[i].seconds || 0)) || steps[i].duration || '';
         } else {
           if (speedInput) speedInput.value = '';
           if (durInput) durInput.value = '';
@@ -1949,7 +1953,7 @@ var EdgeApp = (function () {
     });
 
     EdgeWebSocket.on('safety_stop', function () {
-      WorkoutUI.renderSafetyStopOverlay(true, 'Safety stop activated — pool has been stopped.');
+      WorkoutUI.renderSafetyStopOverlay(true, 'Safety stop activated — pool has been stopped. No PLC heartbeat detected. Enable Simulator Mode (SIMULATOR_MODE=true) or connect PLC hardware.');
     });
 
     EdgeWebSocket.on('error', function (payload) {
