@@ -167,9 +167,17 @@ export async function updateUserRole(userId: string, newRole: UserRole, actorId:
   return toUserDTO(row);
 }
 
-export async function updatePassword(userId: string, newPassword: string, actorId?: string): Promise<void> {
+export async function updatePassword(userId: string, newPassword: string, actorId?: string, currentPassword?: string): Promise<void> {
   if (!newPassword || newPassword.length < 4) throw new ValidationError('Password must be at least 4 characters');
   const db = getDb();
+
+  if (currentPassword !== undefined) {
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined;
+    if (!row) throw new AuthError('User not found');
+    const valid = await verifyPassword(row.password_hash, currentPassword);
+    if (!valid) throw new AuthError('Current password is incorrect');
+  }
+
   const hash = await hashPassword(newPassword);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
   auditLog('PASSWORD_CHANGED', actorId ?? userId, 'user', userId, {});

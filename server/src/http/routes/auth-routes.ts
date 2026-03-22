@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import rateLimit from 'express-rate-limit';
 import * as authService from '../../auth/auth-service';
 import { authenticate, requireSuperAdmin } from '../../auth/middleware';
 import { UserRole, CommissioningOrg } from '../../shared/models';
@@ -9,6 +10,30 @@ import { getDb } from '../../database/connection';
 import { auditLog } from '../../auth/audit';
 
 const router = Router();
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many attempts, please try again later' } },
+});
+
+const registerRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many registration attempts, please try again later' } },
+});
+
+const commissionRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many commissioning attempts, please try again later' } },
+});
 
 // --- Public: check commissioning state ---
 
@@ -25,7 +50,7 @@ router.get('/system-status', (_req: Request, res: Response) => {
 
 // --- Registration (only available after commissioning) ---
 
-router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', registerRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!isSystemCommissioned()) {
       throw new ForbiddenError('System must be commissioned before users can register');
@@ -39,7 +64,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
 
 // --- Login ---
 
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { username, password } = req.body;
     const sourceIp = req.ip || req.socket.remoteAddress;
@@ -59,10 +84,10 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 
 router.post('/logout', authenticate, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.slice(7);
-    if (token) {
+    const sessionId = req.user?.sessionId;
+    if (sessionId) {
       const db = getDb();
-      db.prepare('UPDATE sessions SET is_revoked = 1 WHERE token = ?').run(token);
+      db.prepare('UPDATE sessions SET is_revoked = 1 WHERE token = ?').run(sessionId);
     }
     res.json({ success: true });
   } catch (err) { next(err); }
@@ -86,8 +111,11 @@ router.put('/me/preferences', authenticate, (req: Request, res: Response, next: 
 
 router.put('/me/password', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { newPassword } = req.body;
-    await authService.updatePassword(req.user!.userId, newPassword);
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword) {
+      throw new ValidationError('Current password is required');
+    }
+    await authService.updatePassword(req.user!.userId, newPassword, req.user!.userId, currentPassword);
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -97,7 +125,7 @@ router.put('/me/password', authenticate, async (req: Request, res: Response, nex
 /**
  * Step 1: Set commissioning codes (SwimEx + BSC Industries)
  */
-router.post('/commission/step1-codes', authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/commission/step1-codes', commissionRateLimiter, authenticate, requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (isSystemCommissioned()) throw new ValidationError('System is already commissioned');
 
@@ -357,7 +385,7 @@ router.get('/commission/status', authenticate, requireSuperAdmin, (_req: Request
 
 // --- Super Admin account reset (via commissioning code) ---
 
-router.post('/reset-super-admin', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/reset-super-admin', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { organization, code, newUsername, newPassword } = req.body;
     const sourceIp = req.ip || req.socket.remoteAddress;

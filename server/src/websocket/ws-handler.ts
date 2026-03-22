@@ -7,6 +7,7 @@ import { mqttBroker } from '../mqtt/mqtt-broker';
 import { modbusClient } from '../modbus/modbus-client';
 import { createLogger } from '../utils/logger';
 import { config } from '../utils/config';
+import { UserRole } from '../shared/models';
 
 const log = createLogger('websocket');
 
@@ -137,6 +138,10 @@ export class WebSocketHandler {
         break;
 
       case 'subscribe_tags':
+        if (!client.user) {
+          this.send(client.ws, { type: 'error', payload: { code: 'AUTH_REQUIRED', message: 'Authentication required for tag subscriptions' } });
+          break;
+        }
         this.handleSubscribeTags(client, payload);
         break;
 
@@ -145,10 +150,18 @@ export class WebSocketHandler {
         break;
 
       case 'get_tag':
+        if (!client.user) {
+          this.send(client.ws, { type: 'error', payload: { code: 'AUTH_REQUIRED', message: 'Authentication required for tag access' } });
+          break;
+        }
         this.handleGetTag(client, payload);
         break;
 
       case 'get_tags':
+        if (!client.user) {
+          this.send(client.ws, { type: 'error', payload: { code: 'AUTH_REQUIRED', message: 'Authentication required for tag access' } });
+          break;
+        }
         this.handleGetTags(client, payload);
         break;
 
@@ -214,11 +227,17 @@ export class WebSocketHandler {
         case 'ADJUST_SPEED':
           workoutEngine.adjustSpeed(delta ?? 0);
           break;
-        case 'WRITE_TAG':
+        case 'WRITE_TAG': {
+          const writeRoles: string[] = [UserRole.SUPER_ADMINISTRATOR, UserRole.ADMINISTRATOR, UserRole.MAINTENANCE];
+          if (!writeRoles.includes(client.user.role)) {
+            this.send(client.ws, { type: 'command_error', payload: { command: 'WRITE_TAG', message: 'Insufficient privileges for WRITE_TAG' } });
+            return;
+          }
           if (payload.tagAddress && payload.value !== undefined) {
             tagDatabase.writeTag(payload.tagAddress, payload.value, `ws:${client.user.username}`);
           }
           break;
+        }
         default:
           this.send(client.ws, { type: 'error', payload: { code: 'UNKNOWN_COMMAND', message: `Unknown command: ${command}` } });
           return;
@@ -232,9 +251,13 @@ export class WebSocketHandler {
 
   private handleSubscribeTags(client: ConnectedClient, payload: any): void {
     const tags: string[] = payload.tags ?? [];
+    const adminRoles: string[] = [UserRole.SUPER_ADMINISTRATOR, UserRole.ADMINISTRATOR, UserRole.MAINTENANCE];
     for (const tag of tags) {
+      if (tag === '*' && (!client.user || !adminRoles.includes(client.user.role))) {
+        this.send(client.ws, { type: 'error', payload: { code: 'FORBIDDEN', message: 'Wildcard tag subscription requires admin privileges' } });
+        continue;
+      }
       client.subscribedTags.add(tag);
-      // Send current value immediately
       const value = tagDatabase.readTag(tag);
       if (value) {
         this.send(client.ws, { type: 'tag_update', payload: { address: tag, ...value } });

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import path from 'path';
 
 export interface ServerConfig {
@@ -25,6 +26,17 @@ function env(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
 
+function resolveJwtSecret(): string {
+  const explicit = process.env.JWT_SECRET;
+  if (explicit) return explicit;
+  const generated = crypto.randomBytes(48).toString('base64url');
+  console.warn(
+    '[SECURITY] JWT_SECRET not set — using a random ephemeral secret. ' +
+    'Sessions will not survive restarts. Set JWT_SECRET in your environment for production.',
+  );
+  return generated;
+}
+
 export function loadConfig(): ServerConfig {
   return {
     httpPort: parseInt(env('HTTP_PORT', '80'), 10),
@@ -34,7 +46,7 @@ export function loadConfig(): ServerConfig {
     modbusPort: parseInt(env('MODBUS_PORT', '502'), 10),
     dataDir: env('DATA_DIR', path.resolve(__dirname, '../../data')),
     configDir: env('CONFIG_DIR', path.resolve(__dirname, '../../config')),
-    jwtSecret: env('JWT_SECRET', 'swimex-edge-dev-secret-change-in-production'),
+    jwtSecret: resolveJwtSecret(),
     jwtExpiresIn: env('JWT_EXPIRES_IN', '24h'),
     heartbeatIntervalMs: parseInt(env('HEARTBEAT_INTERVAL_MS', '2000'), 10),
     heartbeatMissedThreshold: parseInt(env('HEARTBEAT_MISSED_THRESHOLD', '3'), 10),

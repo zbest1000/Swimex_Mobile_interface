@@ -29,27 +29,24 @@ export async function seedDefaults(): Promise<void> {
     INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioning_step', '0', datetime('now'))
   `).run();
 
-  // Create default Super Admin
   try {
     await authService.createUser('superadmin', 'superadmin', 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
-    log.info('Created Super Administrator: superadmin / superadmin');
+    log.info('Created initial Super Administrator account');
   } catch (err: any) {
     log.warn(`Super admin creation: ${err.message}`);
   }
 
-  // Create default Admin
   try {
     await authService.createUser('admin', 'admin', 'Administrator', UserRole.ADMINISTRATOR);
-    log.info('Created Administrator: admin / admin');
+    log.info('Created initial Administrator account');
   } catch (err: any) {
     log.warn(`Admin creation: ${err.message}`);
   }
 
   log.info('========================================');
-  log.info(' Default Accounts');
-  log.info('========================================');
-  log.info(' Super Admin: superadmin / superadmin');
-  log.info(' Admin:       admin / admin');
+  log.info(' Default accounts created.');
+  log.info(' CHANGE DEFAULT PASSWORDS IMMEDIATELY');
+  log.info(' via the commissioning wizard.');
   log.info('========================================');
 }
 
