@@ -59,10 +59,10 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 
 router.post('/logout', authenticate, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.slice(7);
-    if (token) {
+    const sessionId = req.user?.sessionId;
+    if (sessionId) {
       const db = getDb();
-      db.prepare('UPDATE sessions SET is_revoked = 1 WHERE token = ?').run(token);
+      db.prepare('UPDATE sessions SET is_revoked = 1 WHERE token = ?').run(sessionId);
     }
     res.json({ success: true });
   } catch (err) { next(err); }
