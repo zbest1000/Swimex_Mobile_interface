@@ -28,7 +28,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     const db = getDb();
     const session = db.prepare(
       "SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime('now')"
-    ).get(token) as Record<string, unknown> | undefined;
+    ).get(req.user.sessionId) as Record<string, unknown> | undefined;
 
     if (!session) {
       return next(new AuthError('Session expired or revoked'));
