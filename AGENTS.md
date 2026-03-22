@@ -22,4 +22,5 @@ SwimEx EDGE is a two-tier embedded pool control platform. The **EDGE Server** (`
 - **PLC keep-alive warnings**: Expected in dev without a PLC connected. The server logs repeated "PLC heartbeat lost" warnings and triggers safety stop on the web UI. Use `DISABLE_PLC_CHECKS=true` env var to suppress PLC timeout checks in dev/demo mode.
 - **ESLint config**: Added as `.eslintrc.json` (ESLint v8 format). The `lint` script in `package.json` is `eslint src/ --ext .ts`.
 - **Jest config**: Added as `jest.config.js` with `ts-jest` preset. Tests are in `server/tests/unit/`.
-- **Test results**: 19/21 tests pass. 2 auth tests fail due to the `datetime("now")` bug mentioned above.
+- **Test results**: 20/21 tests pass. 1 auth test (`verifies JWT token`) fails due to `UNIQUE constraint failed: sessions.token` — a pre-existing bug related to session handling. This is not caused by setup issues.
+- **Test–server DB collision**: Jest tests use the same `data/edge.db` as the dev server. Running `npx jest` while the server is running can corrupt the database. After running tests, delete `data/edge.db*` and restart the server to get a clean state.
