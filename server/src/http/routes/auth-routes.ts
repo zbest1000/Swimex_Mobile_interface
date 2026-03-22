@@ -168,13 +168,25 @@ router.post('/commission/step3-network', authenticate, requireSuperAdmin, (req: 
 
     const { wifiSsid, wifiPassword, wifiChannel, serverIp, subnetMask, gateway } = req.body;
 
-    // Save network config
+    // Save network config (legacy system_config keys)
     setSystemConfig('wifi_ssid', wifiSsid || 'PoolCtrl');
     setSystemConfig('wifi_password', wifiPassword || '');
     setSystemConfig('wifi_channel', String(wifiChannel || 6));
     setSystemConfig('server_ip', serverIp || '');
     setSystemConfig('subnet_mask', subnetMask || '255.255.255.0');
     setSystemConfig('gateway', gateway || '');
+
+    // Also save to the unified WiFi AP config used by the wifi-service
+    try {
+      const wifiService = require('../../admin/wifi-service');
+      wifiService.updateWifiConfig({
+        ssid: wifiSsid || 'PoolCtrl',
+        password: wifiPassword || 'swimex2024',
+        channel: wifiChannel || 6,
+      }, req.user!.userId);
+    } catch (err: any) {
+      // Non-fatal: wifi-service config is optional during commissioning
+    }
 
     setSystemConfig('commissioning_step', '3');
     auditLog('COMMISSIONING_STEP3', req.user!.userId, 'system', 'commissioning', { step: 'network_configured', wifiSsid }, req.ip);
