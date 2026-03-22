@@ -15,6 +15,7 @@ import { wsHandler } from '../../websocket/ws-handler';
 import { mqttBroker } from '../../mqtt/mqtt-broker';
 import { modbusServer } from '../../modbus/modbus-server';
 import { modbusClient } from '../../modbus/modbus-client';
+import * as i18nService from '../../admin/i18n-service';
 
 const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -316,6 +317,48 @@ router.delete('/logos/:type', authenticate, requireAdmin, (req: Request, res: Re
 // --- Public branding endpoint (no auth required for client display) ---
 router.get('/public/branding', (_req: Request, res: Response) => {
   res.json({ success: true, data: brandingService.getBranding() });
+});
+
+// --- i18n Language Pack Management ---
+router.get('/i18n/available', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  res.json({ success: true, data: i18nService.getAvailablePacks() });
+});
+
+router.post('/i18n/install', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { locale } = req.body;
+    if (!locale) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'locale is required' } });
+    }
+    const pack = i18nService.installLanguagePack(locale);
+    res.status(201).json({ success: true, data: pack });
+  } catch (err) { next(err); }
+});
+
+router.delete('/i18n/:locale', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    i18nService.removeLanguagePack(req.params.locale);
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.put('/i18n/config', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { defaultLocale, autoDetect } = req.body;
+    if (defaultLocale !== undefined) {
+      i18nService.setDefaultLocale(defaultLocale);
+    }
+    if (autoDetect !== undefined) {
+      i18nService.setAutoLocaleDetection(Boolean(autoDetect));
+    }
+    res.json({
+      success: true,
+      data: {
+        defaultLocale: i18nService.getDefaultLocale(),
+        autoDetect: i18nService.isAutoLocaleEnabled(),
+      },
+    });
+  } catch (err) { next(err); }
 });
 
 // --- Audit log ---

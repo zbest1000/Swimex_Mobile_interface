@@ -10,6 +10,7 @@ var EdgeApp = (function () {
   var currentParams = [];
   var activeWorkout = null;
   var workoutPollTimer = null;
+  var featureFlags = {};
 
   // ============ SVG Icon Helpers ============
   var icons = {
@@ -24,7 +25,8 @@ var EdgeApp = (function () {
     sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>',
     moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
-    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'
+    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+    globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>'
   };
 
   function icon(name, cls) {
@@ -150,14 +152,17 @@ var EdgeApp = (function () {
     var user = EdgeAPI.getCachedUser();
     var initial = user ? (user.displayName || user.username || '?')[0].toUpperCase() : '?';
 
+    var treadmillEnabled = featureFlags.TREADMILL_ENABLED === true;
     var links = [
-      { route: 'home', label: 'Home', icon: 'home' },
-      { route: 'quick-start', label: 'Quick Start', icon: 'zap' },
-      { route: 'custom-programs', label: 'Programs', icon: 'list' },
-      { route: 'interval', label: 'Interval', icon: 'repeat' },
-      { route: 'distance', label: 'Distance', icon: 'target' },
-      { route: 'sprint', label: 'Sprint', icon: 'sprint' }
+      { route: 'home', label: EdgeI18n.t('nav.home'), icon: 'home' },
+      { route: 'quick-start', label: EdgeI18n.t('nav.quickStart'), icon: 'zap' },
+      { route: 'custom-programs', label: EdgeI18n.t('nav.programs'), icon: 'list' },
+      { route: 'interval', label: EdgeI18n.t('nav.interval'), icon: 'repeat' }
     ];
+    if (treadmillEnabled) {
+      links.push({ route: 'distance', label: EdgeI18n.t('nav.distance'), icon: 'target' });
+      links.push({ route: 'sprint', label: EdgeI18n.t('nav.sprint'), icon: 'sprint' });
+    }
 
     var navLinksHtml = links.map(function (l) {
       var active = currentRoute === l.route ? ' active' : '';
@@ -166,20 +171,23 @@ var EdgeApp = (function () {
     }).join('');
 
     var rightHtml =
-      '<button class="nav-theme-btn" id="theme-toggle-btn" title="Toggle theme">' +
+      '<button class="nav-theme-btn" id="lang-toggle-btn" title="' + EdgeI18n.t('settings.selectLanguage') + '">' +
+        icons.globe +
+      '</button>' +
+      '<button class="nav-theme-btn" id="theme-toggle-btn" title="' + EdgeI18n.t('nav.toggleTheme') + '">' +
         (getTheme() === 'dark' ? icons.sun : icons.moon) +
       '</button>';
 
     if (loggedIn) {
       rightHtml +=
-        '<a href="#/profile" class="nav-user-btn" title="Profile">' + escapeHtml(initial) + '</a>';
+        '<a href="#/profile" class="nav-user-btn" title="' + EdgeI18n.t('profile.title') + '">' + escapeHtml(initial) + '</a>';
       if (isAdmin) {
         rightHtml += '<a href="#/admin" class="nav-link' + (currentRoute === 'admin' ? ' active' : '') +
           '" style="padding:0.5rem;">' + icon('settings') + '</a>';
       }
     } else {
       rightHtml +=
-        '<a href="#/login" class="btn btn-sm btn-primary">Login</a>';
+        '<a href="#/login" class="btn btn-sm btn-primary">' + EdgeI18n.t('nav.login') + '</a>';
     }
 
     return '<nav class="top-nav">' +
@@ -196,7 +204,7 @@ var EdgeApp = (function () {
   function renderConnectionDot() {
     return '<div class="connection-dot disconnected" id="conn-dot">' +
       '<span class="connection-dot-circle"></span>' +
-      '<span id="conn-label">Connecting...</span>' +
+      '<span id="conn-label">' + EdgeI18n.t('common.connecting') + '</span>' +
     '</div>';
   }
 
@@ -206,21 +214,24 @@ var EdgeApp = (function () {
     dot.className = 'connection-dot ' + state;
     var label = $('#conn-label');
     if (label) {
-      if (state === 'connected') label.textContent = 'Connected';
-      else if (state === 'connecting') label.textContent = 'Connecting...';
-      else label.textContent = 'Disconnected';
+      if (state === 'connected') label.textContent = EdgeI18n.t('common.connected');
+      else if (state === 'connecting') label.textContent = EdgeI18n.t('common.connecting');
+      else label.textContent = EdgeI18n.t('common.disconnected');
     }
   }
 
   // ============ Screen Renderers ============
   function screenHome() {
+    var treadmillEnabled = featureFlags.TREADMILL_ENABLED === true;
     var modes = [
-      { route: 'quick-start', label: 'Quick Start', desc: 'Set speed & time, start immediately', icon: 'zap' },
-      { route: 'custom-programs', label: 'Custom Programs', desc: 'Build multi-step workout programs', icon: 'list' },
-      { route: 'interval', label: 'Interval', desc: 'Alternating speed intervals with sets', icon: 'repeat' },
-      { route: 'distance', label: 'Distance', desc: 'Preset distance-based workouts', icon: 'target' },
-      { route: 'sprint', label: 'Sprint', desc: 'High-intensity sprint training', icon: 'sprint' }
+      { route: 'quick-start', label: EdgeI18n.t('home.quickStart'), desc: EdgeI18n.t('home.quickStartDesc'), icon: 'zap' },
+      { route: 'custom-programs', label: EdgeI18n.t('home.customPrograms'), desc: EdgeI18n.t('home.customProgramsDesc'), icon: 'list' },
+      { route: 'interval', label: EdgeI18n.t('home.interval'), desc: EdgeI18n.t('home.intervalDesc'), icon: 'repeat' }
     ];
+    if (treadmillEnabled) {
+      modes.push({ route: 'distance', label: EdgeI18n.t('home.distance'), desc: EdgeI18n.t('home.distanceDesc'), icon: 'target' });
+      modes.push({ route: 'sprint', label: EdgeI18n.t('home.sprint'), desc: EdgeI18n.t('home.sprintDesc'), icon: 'sprint' });
+    }
 
     var cards = modes.map(function (m) {
       return '<a href="#/' + m.route + '" class="mode-card">' +
@@ -231,69 +242,69 @@ var EdgeApp = (function () {
     }).join('');
 
     return '<div class="screen-header">' +
-      '<div><h1 class="screen-title">SwimEx EDGE</h1>' +
-      '<p class="screen-subtitle">Pool Control System</p></div>' +
+      '<div><h1 class="screen-title">' + EdgeI18n.t('app.title') + '</h1>' +
+      '<p class="screen-subtitle">' + EdgeI18n.t('app.subtitle') + '</p></div>' +
     '</div>' +
     '<div class="mode-grid">' + cards + '</div>';
   }
 
   function screenLogin() {
     return '<div class="form-card card">' +
-      '<h2 class="card-title">Login</h2>' +
+      '<h2 class="card-title">' + EdgeI18n.t('auth.login') + '</h2>' +
       '<form id="login-form">' +
         '<div class="form-group">' +
-          '<label class="form-label">Username</label>' +
-          '<input type="text" class="form-input" name="username" required autocomplete="username" placeholder="Enter username">' +
+          '<label class="form-label">' + EdgeI18n.t('auth.username') + '</label>' +
+          '<input type="text" class="form-input" name="username" required autocomplete="username" placeholder="' + EdgeI18n.t('auth.username') + '">' +
         '</div>' +
         '<div class="form-group">' +
-          '<label class="form-label">Password</label>' +
-          '<input type="password" class="form-input" name="password" required autocomplete="current-password" placeholder="Enter password">' +
+          '<label class="form-label">' + EdgeI18n.t('auth.password') + '</label>' +
+          '<input type="password" class="form-input" name="password" required autocomplete="current-password" placeholder="' + EdgeI18n.t('auth.password') + '">' +
         '</div>' +
         '<div id="login-error" class="form-error" style="display:none;margin-bottom:1rem;"></div>' +
-        '<button type="submit" class="btn btn-primary btn-lg btn-block">Login</button>' +
+        '<button type="submit" class="btn btn-primary btn-lg btn-block">' + EdgeI18n.t('auth.loginBtn') + '</button>' +
       '</form>' +
-      '<p class="text-center text-sm mt-2">Don\'t have an account? <a href="#/register">Register</a></p>' +
+      '<p class="text-center text-sm mt-2">' + EdgeI18n.t('auth.noAccount') + ' <a href="#/register">' + EdgeI18n.t('auth.register') + '</a></p>' +
     '</div>';
   }
 
   function screenRegister() {
     return '<div class="form-card card">' +
-      '<h2 class="card-title">Create Account</h2>' +
+      '<h2 class="card-title">' + EdgeI18n.t('auth.registerBtn') + '</h2>' +
       '<form id="register-form">' +
         '<div class="form-group">' +
-          '<label class="form-label">Username</label>' +
-          '<input type="text" class="form-input" name="username" required placeholder="Choose a username">' +
+          '<label class="form-label">' + EdgeI18n.t('auth.username') + '</label>' +
+          '<input type="text" class="form-input" name="username" required placeholder="' + EdgeI18n.t('auth.username') + '">' +
         '</div>' +
         '<div class="form-group">' +
-          '<label class="form-label">Display Name</label>' +
-          '<input type="text" class="form-input" name="displayName" placeholder="Optional display name">' +
+          '<label class="form-label">' + EdgeI18n.t('auth.displayName') + '</label>' +
+          '<input type="text" class="form-input" name="displayName" placeholder="' + EdgeI18n.t('auth.displayName') + '">' +
         '</div>' +
         '<div class="form-group">' +
-          '<label class="form-label">Password</label>' +
-          '<input type="password" class="form-input" name="password" required placeholder="Min 6 characters" minlength="6">' +
+          '<label class="form-label">' + EdgeI18n.t('auth.password') + '</label>' +
+          '<input type="password" class="form-input" name="password" required placeholder="' + EdgeI18n.t('auth.password') + '" minlength="6">' +
         '</div>' +
         '<div id="register-error" class="form-error" style="display:none;margin-bottom:1rem;"></div>' +
-        '<button type="submit" class="btn btn-primary btn-lg btn-block">Register</button>' +
+        '<button type="submit" class="btn btn-primary btn-lg btn-block">' + EdgeI18n.t('auth.registerBtn') + '</button>' +
       '</form>' +
-      '<p class="text-center text-sm mt-2">Already have an account? <a href="#/login">Login</a></p>' +
+      '<p class="text-center text-sm mt-2">' + EdgeI18n.t('auth.haveAccount') + ' <a href="#/login">' + EdgeI18n.t('auth.login') + '</a></p>' +
     '</div>';
   }
 
   function screenQuickStart() {
     return '<div class="screen-header">' +
-      '<h1 class="screen-title">Quick Start</h1>' +
+      '<h1 class="screen-title">' + EdgeI18n.t('quickStart.title') + '</h1>' +
     '</div>' +
     '<div class="quick-start-layout">' +
       '<div class="card w-full text-center">' +
-        '<p class="text-muted mb-1">Speed</p>' +
+        '<p class="text-muted mb-1">' + EdgeI18n.t('quickStart.speed') + '</p>' +
         '<div class="speed-display" id="qs-speed-display">50<span class="speed-display-unit">%</span></div>' +
       '</div>' +
       '<div class="card w-full text-center">' +
-        '<p class="text-muted mb-1">Duration</p>' +
+        '<p class="text-muted mb-1">' + EdgeI18n.t('quickStart.duration') + '</p>' +
         '<div class="speed-display" id="qs-time-display" style="font-size:3.5rem;">10:00</div>' +
       '</div>' +
       '<div class="quick-start-controls">' +
-        '<button class="btn btn-success btn-lg" id="qs-start-btn" style="min-width:200px;">START</button>' +
+        '<button class="btn btn-success btn-lg" id="qs-start-btn" style="min-width:200px;">' + EdgeI18n.t('quickStart.start') + '</button>' +
       '</div>' +
     '</div>';
   }
@@ -309,36 +320,36 @@ var EdgeApp = (function () {
     }
 
     return '<div class="screen-header">' +
-      '<h1 class="screen-title">Custom Programs</h1>' +
+      '<h1 class="screen-title">' + EdgeI18n.t('programs.title') + '</h1>' +
       '<div class="header-actions">' +
-        '<button class="btn btn-ghost btn-sm" id="cp-new-btn">New</button>' +
-        '<button class="btn btn-primary btn-sm" id="cp-save-btn">Save</button>' +
+        '<button class="btn btn-ghost btn-sm" id="cp-new-btn">' + EdgeI18n.t('programs.new') + '</button>' +
+        '<button class="btn btn-primary btn-sm" id="cp-save-btn">' + EdgeI18n.t('programs.save') + '</button>' +
       '</div>' +
     '</div>' +
     '<div class="program-layout">' +
       '<div class="card">' +
         '<div class="form-group">' +
-          '<label class="form-label">Program Name</label>' +
-          '<input type="text" class="form-input" id="cp-name" placeholder="My Program">' +
+          '<label class="form-label">' + EdgeI18n.t('programs.programName') + '</label>' +
+          '<input type="text" class="form-input" id="cp-name" placeholder="' + EdgeI18n.t('programs.programName') + '">' +
         '</div>' +
         '<div class="form-group">' +
-          '<label class="form-label">Sets</label>' +
+          '<label class="form-label">' + EdgeI18n.t('programs.sets') + '</label>' +
           '<input type="number" class="form-input" id="cp-sets" value="1" min="1" max="99" style="max-width:100px;">' +
         '</div>' +
         '<div style="overflow-x:auto;">' +
           '<table class="step-table">' +
-            '<thead><tr><th>#</th><th>Speed (%)</th><th>Duration (sec)</th></tr></thead>' +
+            '<thead><tr><th>#</th><th>' + EdgeI18n.t('programs.speed') + '</th><th>' + EdgeI18n.t('programs.duration') + '</th></tr></thead>' +
             '<tbody id="cp-steps">' + rows + '</tbody>' +
           '</table>' +
         '</div>' +
         '<div class="mt-2 d-flex gap-sm">' +
-          '<button class="btn btn-success btn-sm" id="cp-run-btn">Run Program</button>' +
+          '<button class="btn btn-success btn-sm" id="cp-run-btn">' + EdgeI18n.t('programs.runProgram') + '</button>' +
         '</div>' +
       '</div>' +
       '<div class="program-sidebar">' +
         '<div class="card">' +
-          '<div class="card-title">Library</div>' +
-          '<div class="program-list" id="cp-library">Loading...</div>' +
+          '<div class="card-title">' + EdgeI18n.t('programs.library') + '</div>' +
+          '<div class="program-list" id="cp-library">' + EdgeI18n.t('common.loading') + '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -346,49 +357,49 @@ var EdgeApp = (function () {
 
   function screenInterval() {
     return '<div class="screen-header">' +
-      '<h1 class="screen-title">Interval Training</h1>' +
+      '<h1 class="screen-title">' + EdgeI18n.t('interval.title') + '</h1>' +
     '</div>' +
     '<div class="interval-layout">' +
       '<div class="card text-center">' +
-        '<p class="text-muted mb-1">Sets</p>' +
+        '<p class="text-muted mb-1">' + EdgeI18n.t('interval.sets') + '</p>' +
         '<div class="speed-display" id="iv-sets-display" style="font-size:3rem;">5</div>' +
       '</div>' +
       '<div class="interval-steps">' +
         '<div class="interval-step-card">' +
-          '<div class="interval-step-label">Step 1 — High</div>' +
+          '<div class="interval-step-label">' + EdgeI18n.t('interval.step1High') + '</div>' +
           '<div class="interval-step-value" id="iv-s1-speed">70</div>' +
-          '<p class="text-muted text-sm mt-1">Speed %</p>' +
+          '<p class="text-muted text-sm mt-1">' + EdgeI18n.t('interval.speedPercent') + '</p>' +
           '<div class="interval-step-value" id="iv-s1-dur" style="font-size:1.5rem;margin-top:0.5rem;">0:30</div>' +
-          '<p class="text-muted text-xs">Duration</p>' +
+          '<p class="text-muted text-xs">' + EdgeI18n.t('interval.duration') + '</p>' +
         '</div>' +
         '<div class="interval-step-card">' +
-          '<div class="interval-step-label">Step 2 — Low</div>' +
+          '<div class="interval-step-label">' + EdgeI18n.t('interval.step2Low') + '</div>' +
           '<div class="interval-step-value" id="iv-s2-speed">30</div>' +
-          '<p class="text-muted text-sm mt-1">Speed %</p>' +
+          '<p class="text-muted text-sm mt-1">' + EdgeI18n.t('interval.speedPercent') + '</p>' +
           '<div class="interval-step-value" id="iv-s2-dur" style="font-size:1.5rem;margin-top:0.5rem;">0:30</div>' +
-          '<p class="text-muted text-xs">Duration</p>' +
+          '<p class="text-muted text-xs">' + EdgeI18n.t('interval.duration') + '</p>' +
         '</div>' +
       '</div>' +
-      '<button class="btn btn-success btn-lg btn-block" id="iv-start-btn">START INTERVALS</button>' +
+      '<button class="btn btn-success btn-lg btn-block" id="iv-start-btn">' + EdgeI18n.t('interval.startIntervals') + '</button>' +
     '</div>';
   }
 
   function screenPreset(type) {
-    var title = type === 'distance' ? 'Distance Training' : 'Sprint Training';
+    var title = type === 'distance' ? EdgeI18n.t('distance.title') : EdgeI18n.t('sprint.title');
     var levels = [
-      { level: 'beginner', label: 'Beginner', desc: type === 'distance' ? 'Easy pace, longer duration for building endurance' : 'Moderate sprints with generous rest periods', speed: type === 'distance' ? '30-40%' : '50-60%', duration: type === 'distance' ? '20 min' : '10 min' },
-      { level: 'intermediate', label: 'Intermediate', desc: type === 'distance' ? 'Moderate pace with sustained effort' : 'Faster sprints with moderate recovery', speed: type === 'distance' ? '45-55%' : '65-75%', duration: type === 'distance' ? '30 min' : '15 min' },
-      { level: 'advanced', label: 'Advanced', desc: type === 'distance' ? 'High pace challenging workout for experienced swimmers' : 'Maximum intensity sprints with short recovery', speed: type === 'distance' ? '60-75%' : '80-95%', duration: type === 'distance' ? '45 min' : '20 min' }
+      { level: 'beginner', label: EdgeI18n.t('preset.beginner'), desc: type === 'distance' ? EdgeI18n.t('preset.beginnerDistDesc') : EdgeI18n.t('preset.beginnerSprintDesc'), speed: type === 'distance' ? '30-40%' : '50-60%', duration: type === 'distance' ? '20 min' : '10 min' },
+      { level: 'intermediate', label: EdgeI18n.t('preset.intermediate'), desc: type === 'distance' ? EdgeI18n.t('preset.intermediateDistDesc') : EdgeI18n.t('preset.intermediateSprintDesc'), speed: type === 'distance' ? '45-55%' : '65-75%', duration: type === 'distance' ? '30 min' : '15 min' },
+      { level: 'advanced', label: EdgeI18n.t('preset.advanced'), desc: type === 'distance' ? EdgeI18n.t('preset.advancedDistDesc') : EdgeI18n.t('preset.advancedSprintDesc'), speed: type === 'distance' ? '60-75%' : '80-95%', duration: type === 'distance' ? '45 min' : '20 min' }
     ];
 
     var cards = levels.map(function (l) {
       return '<div class="preset-card" data-type="' + type + '" data-level="' + l.level + '">' +
         '<div class="preset-level">' + l.label + '</div>' +
-        '<div class="preset-card-title">' + l.label + ' ' + title.split(' ')[0] + '</div>' +
+        '<div class="preset-card-title">' + l.label + '</div>' +
         '<div class="preset-card-desc">' + l.desc + '</div>' +
         '<div class="preset-card-stats">' +
-          '<div><span class="preset-stat-value">' + l.speed + '</span>Speed</div>' +
-          '<div><span class="preset-stat-value">' + l.duration + '</span>Duration</div>' +
+          '<div><span class="preset-stat-value">' + l.speed + '</span>' + EdgeI18n.t('preset.speed') + '</div>' +
+          '<div><span class="preset-stat-value">' + l.duration + '</span>' + EdgeI18n.t('preset.duration') + '</div>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -413,35 +424,44 @@ var EdgeApp = (function () {
       '<div class="card profile-header-card">' +
         '<div class="profile-avatar" id="prof-avatar">?</div>' +
         '<div class="profile-info">' +
-          '<h2 id="prof-name">Loading...</h2>' +
+          '<h2 id="prof-name">' + EdgeI18n.t('common.loading') + '</h2>' +
           '<p id="prof-role">-</p>' +
         '</div>' +
         '<div style="margin-left:auto;">' +
-          '<button class="btn btn-ghost btn-sm" id="prof-logout-btn">' + icon('logout') + ' Logout</button>' +
+          '<button class="btn btn-ghost btn-sm" id="prof-logout-btn">' + icon('logout') + ' ' + EdgeI18n.t('profile.logout') + '</button>' +
         '</div>' +
       '</div>' +
       '<div class="stats-grid" id="prof-stats"></div>' +
       '<div class="card">' +
-        '<div class="card-title">Workout History</div>' +
-        '<div id="prof-history" style="overflow-x:auto;">Loading...</div>' +
+        '<div class="card-title">' + EdgeI18n.t('profile.recentHistory') + '</div>' +
+        '<div id="prof-history" style="overflow-x:auto;">' + EdgeI18n.t('common.loading') + '</div>' +
       '</div>' +
     '</div>';
   }
 
   function screenAdmin() {
-    var tabs = ['dashboard', 'users', 'devices', 'communication', 'tags', 'graphics', 'layouts', 'audit'];
+    var tabs = [
+      { key: 'dashboard', label: EdgeI18n.t('admin.dashboard') },
+      { key: 'users', label: EdgeI18n.t('admin.users') },
+      { key: 'devices', label: EdgeI18n.t('admin.devices') },
+      { key: 'communication', label: EdgeI18n.t('admin.communication') },
+      { key: 'tags', label: EdgeI18n.t('admin.tags') },
+      { key: 'graphics', label: EdgeI18n.t('admin.graphics') },
+      { key: 'layouts', label: EdgeI18n.t('admin.layouts') },
+      { key: 'audit', label: EdgeI18n.t('admin.audit') }
+    ];
     var activeTab = currentParams[0] || 'dashboard';
 
-    var tabsHtml = tabs.map(function (t) {
-      return '<button class="admin-tab' + (t === activeTab ? ' active' : '') +
-        '" data-tab="' + t + '">' + t.charAt(0).toUpperCase() + t.slice(1) + '</button>';
+    var tabsHtml = tabs.map(function (tab) {
+      return '<button class="admin-tab' + (tab.key === activeTab ? ' active' : '') +
+        '" data-tab="' + tab.key + '">' + tab.label + '</button>';
     }).join('');
 
     return '<div class="screen-header">' +
-      '<h1 class="screen-title">Admin Panel</h1>' +
+      '<h1 class="screen-title">' + EdgeI18n.t('admin.title') + '</h1>' +
     '</div>' +
     '<div class="admin-tabs">' + tabsHtml + '</div>' +
-    '<div class="admin-content" id="admin-content">Loading...</div>';
+    '<div class="admin-content" id="admin-content">' + EdgeI18n.t('common.loading') + '</div>';
   }
 
   // ============ Screen Initializers (event binding) ============
@@ -645,7 +665,7 @@ var EdgeApp = (function () {
         });
       })
       .catch(function () {
-        lib.innerHTML = '<p class="text-muted">Login required to view programs</p>';
+        lib.innerHTML = '<p class="text-muted">' + EdgeI18n.t('programs.loginRequired') + '</p>';
       });
   }
 
@@ -865,10 +885,10 @@ var EdgeApp = (function () {
       var statsEl = $('#prof-stats');
       if (statsEl) {
         statsEl.innerHTML =
-          statCard(s.totalWorkouts || 0, 'Workouts') +
-          statCard(WorkoutUI.formatTimeDetailed((s.totalTimeMs || 0)), 'Total Time') +
-          statCard(s.avgSpeed ? Math.round(s.avgSpeed) + '%' : '-', 'Avg Speed') +
-          statCard(s.totalDistance || '-', 'Distance');
+          statCard(s.totalWorkouts || 0, EdgeI18n.t('profile.workouts')) +
+          statCard(WorkoutUI.formatTimeDetailed((s.totalTimeMs || 0)), EdgeI18n.t('profile.totalTime')) +
+          statCard(s.avgSpeed ? Math.round(s.avgSpeed) + '%' : '-', EdgeI18n.t('profile.avgSpeed')) +
+          statCard(s.totalDistance || '-', EdgeI18n.t('profile.distance'));
       }
     }).catch(function () {});
 
@@ -1809,6 +1829,52 @@ var EdgeApp = (function () {
       });
   }
 
+  // ============ Language Picker ============
+  function showLanguagePicker() {
+    var locales = EdgeI18n.getAvailableLocales();
+    var currentLoc = EdgeI18n.getLocale();
+
+    var items = locales.map(function (l) {
+      var activeCls = l.locale === currentLoc ? ' active' : '';
+      return '<div class="lang-picker-item' + activeCls + '" data-locale="' + l.locale + '">' +
+        '<div>' +
+          '<span class="lang-picker-name">' + escapeHtml(l.displayName) + '</span>' +
+          '<span class="lang-picker-native">' + escapeHtml(l.nativeName) + '</span>' +
+        '</div>' +
+        (l.locale === currentLoc ? '<span class="lang-picker-check">&#x2714;</span>' : '') +
+      '</div>';
+    }).join('');
+
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML =
+      '<div class="modal">' +
+        '<div class="modal-title">' + EdgeI18n.t('settings.selectLanguage') + '</div>' +
+        '<div class="modal-body" style="padding:0;">' +
+          '<div class="lang-picker-list">' + items + '</div>' +
+        '</div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn btn-ghost" data-action="close">' + EdgeI18n.t('common.close') + '</button>' +
+        '</div>' +
+      '</div>';
+
+    overlay.querySelector('[data-action="close"]').addEventListener('click', function () { overlay.remove(); });
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+    var pickerItems = overlay.querySelectorAll('.lang-picker-item');
+    pickerItems.forEach(function (item) {
+      item.addEventListener('click', function () {
+        var locale = item.getAttribute('data-locale');
+        overlay.remove();
+        EdgeI18n.setLocale(locale).then(function () {
+          handleRoute();
+        });
+      });
+    });
+
+    document.body.appendChild(overlay);
+  }
+
   // ============ Main Render ============
   function renderApp() {
     if (!appEl) return;
@@ -1835,6 +1901,9 @@ var EdgeApp = (function () {
 
     var themeBtn = $('#theme-toggle-btn');
     if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+
+    var langBtn = $('#lang-toggle-btn');
+    if (langBtn) langBtn.addEventListener('click', showLanguagePicker);
 
     switch (currentRoute) {
       case 'login': initLogin(); break;
@@ -1912,13 +1981,23 @@ var EdgeApp = (function () {
   }
 
   // ============ Boot ============
+  function loadFeatureFlags() {
+    return EdgeAPI.getPublicFeatures()
+      .then(function (flags) { featureFlags = flags || {}; })
+      .catch(function () { featureFlags = {}; });
+  }
+
   function init() {
     setTheme(getTheme());
 
     appEl = document.getElementById('app');
     if (!appEl) return;
 
-    handleRoute();
+    EdgeI18n.init().then(function () {
+      return loadFeatureFlags();
+    }).then(function () {
+      handleRoute();
+    });
     window.addEventListener('hashchange', handleRoute);
 
     setupWebSocket();

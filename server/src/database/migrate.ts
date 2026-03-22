@@ -178,6 +178,18 @@ CREATE TABLE IF NOT EXISTS system_config (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Language packs
+CREATE TABLE IF NOT EXISTS language_packs (
+  locale TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  native_name TEXT NOT NULL,
+  is_built_in INTEGER NOT NULL DEFAULT 0,
+  is_installed INTEGER NOT NULL DEFAULT 1,
+  translations TEXT NOT NULL DEFAULT '{}',
+  installed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -201,16 +213,194 @@ export function runMigrations(): void {
   // Seed default feature flags
   const existingFlags = db.prepare('SELECT COUNT(*) as count FROM feature_flags').get() as { count: number };
   if (existingFlags.count === 0) {
-    db.prepare(`
+    const flagInsert = db.prepare(`
       INSERT INTO feature_flags (id, feature_key, display_name, description, is_enabled, is_visible)
-      VALUES (?, ?, ?, ?, 0, 0)
-    `).run(
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    flagInsert.run(
       'ff-bluetooth',
       'BLUETOOTH_ENABLED',
       'Bluetooth Client-Server Transport',
       'Fully implemented Bluetooth transport between client and server. Disabled and hidden by default — only Super Administrator can enable.',
+      0, 0,
+    );
+    flagInsert.run(
+      'ff-treadmill',
+      'TREADMILL_ENABLED',
+      'Treadmill / Distance & Sprint Workouts',
+      'Enables Distance and Sprint preset workout modes. Only available on pools equipped with treadmill hardware.',
+      0, 1,
     );
     log.info('Seeded default feature flags');
+  }
+
+  // Ensure TREADMILL_ENABLED flag exists (for existing databases)
+  const treadmillFlag = db.prepare("SELECT id FROM feature_flags WHERE feature_key = 'TREADMILL_ENABLED'").get();
+  if (!treadmillFlag) {
+    db.prepare(`
+      INSERT INTO feature_flags (id, feature_key, display_name, description, is_enabled, is_visible)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      'ff-treadmill',
+      'TREADMILL_ENABLED',
+      'Treadmill / Distance & Sprint Workouts',
+      'Enables Distance and Sprint preset workout modes. Only available on pools equipped with treadmill hardware.',
+      0, 1,
+    );
+    log.info('Added TREADMILL_ENABLED feature flag');
+  }
+
+  // Add language column to user_preferences if not present
+  const userPrefCols = db.prepare("PRAGMA table_info(user_preferences)").all() as Array<{ name: string }>;
+  const hasLanguageCol = userPrefCols.some(c => c.name === 'language');
+  if (!hasLanguageCol) {
+    db.prepare("ALTER TABLE user_preferences ADD COLUMN language TEXT NOT NULL DEFAULT 'en'").run();
+    log.info('Added language column to user_preferences');
+  }
+
+  // Seed built-in English language pack
+  const enPack = db.prepare("SELECT locale FROM language_packs WHERE locale = 'en'").get();
+  if (!enPack) {
+    const enTranslations = JSON.stringify({
+      "app.title": "SwimEx EDGE",
+      "app.subtitle": "Pool Control System",
+      "nav.home": "Home",
+      "nav.quickStart": "Quick Start",
+      "nav.programs": "Programs",
+      "nav.interval": "Interval",
+      "nav.distance": "Distance",
+      "nav.sprint": "Sprint",
+      "nav.login": "Login",
+      "nav.toggleTheme": "Toggle theme",
+      "home.quickStart": "Quick Start",
+      "home.quickStartDesc": "Set speed & time, start immediately",
+      "home.customPrograms": "Custom Programs",
+      "home.customProgramsDesc": "Build multi-step workout programs",
+      "home.interval": "Interval",
+      "home.intervalDesc": "Alternating speed intervals with sets",
+      "home.distance": "Distance",
+      "home.distanceDesc": "Preset distance-based workouts",
+      "home.sprint": "Sprint",
+      "home.sprintDesc": "High-intensity sprint training",
+      "quickStart.title": "Quick Start",
+      "quickStart.speed": "Speed",
+      "quickStart.duration": "Duration",
+      "quickStart.start": "START",
+      "programs.title": "Custom Programs",
+      "programs.programName": "Program Name",
+      "programs.sets": "Sets",
+      "programs.speed": "Speed (%)",
+      "programs.duration": "Duration (sec)",
+      "programs.new": "New",
+      "programs.save": "Save",
+      "programs.runProgram": "Run Program",
+      "programs.library": "Library",
+      "programs.loginRequired": "Login required to view programs",
+      "interval.title": "Interval Training",
+      "interval.sets": "Sets",
+      "interval.step1High": "Step 1 — High",
+      "interval.step2Low": "Step 2 — Low",
+      "interval.speedPercent": "Speed %",
+      "interval.duration": "Duration",
+      "interval.startIntervals": "START INTERVALS",
+      "distance.title": "Distance Training",
+      "sprint.title": "Sprint Training",
+      "preset.beginner": "Beginner",
+      "preset.intermediate": "Intermediate",
+      "preset.advanced": "Advanced",
+      "preset.speed": "Speed",
+      "preset.duration": "Duration",
+      "preset.beginnerDistDesc": "Easy pace, longer duration for building endurance",
+      "preset.intermediateDistDesc": "Moderate pace with sustained effort",
+      "preset.advancedDistDesc": "High pace challenging workout for experienced swimmers",
+      "preset.beginnerSprintDesc": "Moderate sprints with generous rest periods",
+      "preset.intermediateSprintDesc": "Faster sprints with moderate recovery",
+      "preset.advancedSprintDesc": "Maximum intensity sprints with short recovery",
+      "execution.pause": "Pause",
+      "execution.resume": "Resume",
+      "execution.stop": "Stop",
+      "execution.end": "End",
+      "safety.title": "SAFETY STOP",
+      "safety.message": "Safety stop activated — pool has been stopped.",
+      "safety.acknowledge": "ACKNOWLEDGE",
+      "auth.username": "Username",
+      "auth.password": "Password",
+      "auth.displayName": "Display Name",
+      "auth.loginBtn": "Sign In",
+      "auth.registerBtn": "Create Account",
+      "auth.noAccount": "Don't have an account?",
+      "auth.haveAccount": "Already have an account?",
+      "auth.register": "Register",
+      "auth.login": "Sign In",
+      "profile.title": "Profile",
+      "profile.logout": "Sign Out",
+      "profile.workouts": "Workouts",
+      "profile.totalTime": "Total Time",
+      "profile.avgSpeed": "Avg Speed",
+      "profile.distance": "Distance",
+      "profile.recentHistory": "Recent History",
+      "admin.title": "Administration",
+      "admin.dashboard": "Dashboard",
+      "admin.users": "Users",
+      "admin.devices": "Devices",
+      "admin.communication": "Communication",
+      "admin.tags": "Tags",
+      "admin.graphics": "Graphics",
+      "admin.layouts": "Layouts",
+      "admin.audit": "Audit",
+      "settings.language": "Language",
+      "settings.selectLanguage": "Select Language",
+      "settings.defaultLanguage": "Default Language",
+      "settings.autoDetect": "Auto-detect from location",
+      "settings.installed": "Installed",
+      "settings.available": "Available",
+      "settings.install": "Install",
+      "settings.remove": "Remove",
+      "common.connected": "Connected",
+      "common.connecting": "Connecting...",
+      "common.disconnected": "Disconnected",
+      "common.loading": "Loading...",
+      "common.cancel": "Cancel",
+      "common.confirm": "Confirm",
+      "common.save": "Save",
+      "common.delete": "Delete",
+      "common.edit": "Edit",
+      "common.close": "Close",
+      "common.ok": "OK",
+      "common.back": "Back",
+      "common.next": "Next"
+    });
+    db.prepare(`
+      INSERT INTO language_packs (locale, display_name, native_name, is_built_in, is_installed, translations)
+      VALUES ('en', 'English', 'English', 1, 1, ?)
+    `).run(enTranslations);
+    log.info('Seeded built-in English language pack');
+  }
+
+  // Pre-install all bundled language packs (offline embedded system — no internet)
+  try {
+    const { availablePacks } = require('../admin/i18n-packs');
+    const packInsert = db.prepare(`
+      INSERT OR IGNORE INTO language_packs (locale, display_name, native_name, is_built_in, is_installed, translations)
+      VALUES (?, ?, ?, 0, 1, ?)
+    `);
+    for (const pack of availablePacks) {
+      const exists = db.prepare('SELECT locale FROM language_packs WHERE locale = ?').get(pack.locale);
+      if (!exists) {
+        packInsert.run(pack.locale, pack.displayName, pack.nativeName, JSON.stringify(pack.translations));
+        log.info(`Pre-installed language pack: ${pack.locale} (${pack.displayName})`);
+      }
+    }
+  } catch (err: any) {
+    log.warn(`Could not pre-install language packs: ${err.message}`);
+  }
+
+  // Seed default i18n system config
+  const defaultLocale = db.prepare("SELECT key FROM system_config WHERE key = 'default_locale'").get();
+  if (!defaultLocale) {
+    db.prepare("INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES ('default_locale', 'en', datetime('now'))").run();
+    db.prepare("INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES ('auto_locale_detection', 'false', datetime('now'))").run();
+    log.info('Seeded default i18n system config');
   }
 
   log.info('Migrations complete');

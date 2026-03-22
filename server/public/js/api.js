@@ -105,6 +105,11 @@ const EdgeAPI = (function () {
     getRole: getRole,
     getCachedUser: getCachedUser,
 
+    // ---- Public Feature Flags ----
+    async getPublicFeatures() {
+      return await request('GET', '/api/features');
+    },
+
     // ---- Auth ----
     async login(username, password) {
       const d = await request('POST', '/api/auth/login', { username: username, password: password });
@@ -471,6 +476,39 @@ const EdgeAPI = (function () {
 
     async importDevices(devices) {
       return await request('POST', '/api/admin/devices/import', { devices: devices });
+    },
+
+    // ---- i18n ----
+    async getLanguages() {
+      return await request('GET', '/api/i18n/languages');
+    },
+
+    async getTranslations(locale) {
+      return await request('GET', '/api/i18n/' + locale);
+    },
+
+    async getI18nConfig() {
+      return await request('GET', '/api/i18n/config');
+    },
+
+    async getAvailableLanguagePacks() {
+      return await request('GET', '/api/admin/i18n/available');
+    },
+
+    async installLanguagePack(locale) {
+      return await request('POST', '/api/admin/i18n/install', { locale: locale });
+    },
+
+    async removeLanguagePack(locale) {
+      return await request('DELETE', '/api/admin/i18n/' + locale);
+    },
+
+    async setI18nConfig(config) {
+      return await request('PUT', '/api/admin/i18n/config', config);
+    },
+
+    async updatePreferences(prefs) {
+      return await request('PATCH', '/api/users/me/preferences', prefs);
     },
 
     // ---- Health ----

@@ -141,7 +141,7 @@ router.post('/commission/step2-accounts', authenticate, requireSuperAdmin, async
 
     // Create the administrator account
     if (!adminUsername || adminUsername.length < 3) throw new ValidationError('Admin username must be at least 3 characters');
-    if (!adminPassword || adminPassword.length < 6) throw new ValidationError('Admin password must be at least 6 characters');
+    if (!adminPassword || adminPassword.length < 4) throw new ValidationError('Admin password must be at least 4 characters');
 
     const admin = await authService.createUser(
       adminUsername,
