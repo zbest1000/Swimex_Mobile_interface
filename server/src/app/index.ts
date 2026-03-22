@@ -34,15 +34,15 @@ async function main(): Promise<void> {
   await seedDefaults();
 
   // 2. Register core PLC tags
-  log.info('[2/6] Registering core PLC tags...');
+  log.info('[2/8] Registering core PLC tags...');
   registerCoreTags();
 
   // 3. Initialize data bridge (loads tag mappings from DB)
-  log.info('[3/6] Initializing data bridge...');
+  log.info('[3/8] Initializing data bridge...');
   dataBridge.initialize();
 
   // 4. Start HTTP server + WebSocket (start this FIRST so the UI is available)
-  log.info('[4/6] Starting HTTP server...');
+  log.info('[4/8] Starting HTTP server...');
   const app = createApp();
   const httpServer = http.createServer(app);
   wsHandler.attach(httpServer);
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   });
 
   // 5. Connect to communication services
-  log.info('[5/7] Starting communication services...');
+  log.info('[5/8] Starting communication services...');
 
   // MQTT — start embedded Aedes broker + connect client (or connect to external)
   await mqttBroker.start().catch((err: any) => {
@@ -71,20 +71,30 @@ async function main(): Promise<void> {
   // Modbus TCP client — connect to PLC (if configured)
   configureModbusClient();
 
-  // 6. Start simulator if enabled
+  // 6. WiFi AP (if configured to auto-start)
+  log.info('[6/8] Checking WiFi AP configuration...');
+  try {
+    const { getWifiConfig, applyWifiConfig } = require('../admin/wifi-service');
+    const wifiCfg = getWifiConfig();
+    log.info(`WiFi AP configured: SSID="${wifiCfg.ssid}" Channel=${wifiCfg.channel}`);
+  } catch (err: any) {
+    log.debug(`WiFi AP check: ${err.message}`);
+  }
+
+  // 7. Start simulator if enabled
   const simulatorEnabled = process.env.SIMULATOR_MODE === 'true' || process.env.SIMULATOR_MODE === '1';
   let simulator: PlcSimulator | null = null;
   if (simulatorEnabled) {
-    log.info('[6/7] Starting PLC simulator...');
+    log.info('[7/8] Starting PLC simulator...');
     simulator = new PlcSimulator();
     await simulator.start();
     log.info('PLC simulator running — generating test data');
   } else {
-    log.info('[6/7] PLC simulator disabled (set SIMULATOR_MODE=true to enable)');
+    log.info('[7/8] PLC simulator disabled (set SIMULATOR_MODE=true to enable)');
   }
 
-  // 7. Done
-  log.info('[7/7] Startup complete');
+  // 8. Done
+  log.info('[8/8] Startup complete');
   log.info('========================================');
   log.info(' SwimEx EDGE Server — Ready');
   log.info(`   Web UI:      http://0.0.0.0:${config.httpPort}`);

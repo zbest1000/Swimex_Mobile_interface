@@ -24,8 +24,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks, hostapd/dnsmasq for WiFi AP, iw for station info
+RUN apk add --no-cache curl hostapd dnsmasq iw wireless-tools
 
 # Copy package files and install production dependencies only
 COPY package.json package-lock.json ./

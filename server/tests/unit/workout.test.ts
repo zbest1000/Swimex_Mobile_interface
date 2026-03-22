@@ -5,10 +5,10 @@ import { WorkoutState, TerminationType } from '../../src/shared/models';
 
 describe('WorkoutEngine', () => {
   let engine: WorkoutEngine;
+  const testDataDir = '/tmp/edge-test-workout-' + Date.now();
 
   beforeAll(() => {
-    process.env.DATA_DIR = '/tmp/edge-test-workout-' + Date.now();
-    initDatabase();
+    initDatabase(testDataDir);
     runMigrations();
   });
 
@@ -18,6 +18,10 @@ describe('WorkoutEngine', () => {
 
   beforeEach(() => {
     engine = new WorkoutEngine();
+  });
+
+  afterEach(() => {
+    engine.stop(TerminationType.TABLET_END);
   });
 
   test('starts in IDLE state', () => {
