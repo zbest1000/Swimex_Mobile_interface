@@ -105,6 +105,11 @@ const EdgeAPI = (function () {
     getRole: getRole,
     getCachedUser: getCachedUser,
 
+    // ---- Public Feature Flags ----
+    async getPublicFeatures() {
+      return await request('GET', '/api/features');
+    },
+
     // ---- Auth ----
     async login(username, password) {
       const d = await request('POST', '/api/auth/login', { username: username, password: password });

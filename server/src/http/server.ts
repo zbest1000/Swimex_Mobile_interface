@@ -39,6 +39,23 @@ export function createApp(): express.Application {
     });
   });
 
+  // Public feature flags endpoint (no auth — returns only visible flags for client UI)
+  app.get('/api/features', (_req: Request, res: Response) => {
+    try {
+      const featureFlagService = require('../admin/feature-flag-service');
+      const flags = featureFlagService.listFlags() as Array<{ featureKey: string; isEnabled: boolean; isVisible: boolean }>;
+      const publicFlags: Record<string, boolean> = {};
+      for (const f of flags) {
+        if (f.isVisible) {
+          publicFlags[f.featureKey] = f.isEnabled;
+        }
+      }
+      res.json({ success: true, data: publicFlags });
+    } catch {
+      res.json({ success: true, data: {} });
+    }
+  });
+
   // Public branding endpoint (no auth, used by clients for splash/branding display)
   app.get('/api/branding', (_req: Request, res: Response) => {
     try {

@@ -201,16 +201,41 @@ export function runMigrations(): void {
   // Seed default feature flags
   const existingFlags = db.prepare('SELECT COUNT(*) as count FROM feature_flags').get() as { count: number };
   if (existingFlags.count === 0) {
-    db.prepare(`
+    const flagInsert = db.prepare(`
       INSERT INTO feature_flags (id, feature_key, display_name, description, is_enabled, is_visible)
-      VALUES (?, ?, ?, ?, 0, 0)
-    `).run(
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    flagInsert.run(
       'ff-bluetooth',
       'BLUETOOTH_ENABLED',
       'Bluetooth Client-Server Transport',
       'Fully implemented Bluetooth transport between client and server. Disabled and hidden by default — only Super Administrator can enable.',
+      0, 0,
+    );
+    flagInsert.run(
+      'ff-treadmill',
+      'TREADMILL_ENABLED',
+      'Treadmill / Distance & Sprint Workouts',
+      'Enables Distance and Sprint preset workout modes. Only available on pools equipped with treadmill hardware.',
+      0, 1,
     );
     log.info('Seeded default feature flags');
+  }
+
+  // Ensure TREADMILL_ENABLED flag exists (for existing databases)
+  const treadmillFlag = db.prepare("SELECT id FROM feature_flags WHERE feature_key = 'TREADMILL_ENABLED'").get();
+  if (!treadmillFlag) {
+    db.prepare(`
+      INSERT INTO feature_flags (id, feature_key, display_name, description, is_enabled, is_visible)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      'ff-treadmill',
+      'TREADMILL_ENABLED',
+      'Treadmill / Distance & Sprint Workouts',
+      'Enables Distance and Sprint preset workout modes. Only available on pools equipped with treadmill hardware.',
+      0, 1,
+    );
+    log.info('Added TREADMILL_ENABLED feature flag');
   }
 
   log.info('Migrations complete');

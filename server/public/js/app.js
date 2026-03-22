@@ -10,6 +10,7 @@ var EdgeApp = (function () {
   var currentParams = [];
   var activeWorkout = null;
   var workoutPollTimer = null;
+  var featureFlags = {};
 
   // ============ SVG Icon Helpers ============
   var icons = {
@@ -150,14 +151,17 @@ var EdgeApp = (function () {
     var user = EdgeAPI.getCachedUser();
     var initial = user ? (user.displayName || user.username || '?')[0].toUpperCase() : '?';
 
+    var treadmillEnabled = featureFlags.TREADMILL_ENABLED === true;
     var links = [
       { route: 'home', label: 'Home', icon: 'home' },
       { route: 'quick-start', label: 'Quick Start', icon: 'zap' },
       { route: 'custom-programs', label: 'Programs', icon: 'list' },
-      { route: 'interval', label: 'Interval', icon: 'repeat' },
-      { route: 'distance', label: 'Distance', icon: 'target' },
-      { route: 'sprint', label: 'Sprint', icon: 'sprint' }
+      { route: 'interval', label: 'Interval', icon: 'repeat' }
     ];
+    if (treadmillEnabled) {
+      links.push({ route: 'distance', label: 'Distance', icon: 'target' });
+      links.push({ route: 'sprint', label: 'Sprint', icon: 'sprint' });
+    }
 
     var navLinksHtml = links.map(function (l) {
       var active = currentRoute === l.route ? ' active' : '';
@@ -214,13 +218,16 @@ var EdgeApp = (function () {
 
   // ============ Screen Renderers ============
   function screenHome() {
+    var treadmillEnabled = featureFlags.TREADMILL_ENABLED === true;
     var modes = [
       { route: 'quick-start', label: 'Quick Start', desc: 'Set speed & time, start immediately', icon: 'zap' },
       { route: 'custom-programs', label: 'Custom Programs', desc: 'Build multi-step workout programs', icon: 'list' },
-      { route: 'interval', label: 'Interval', desc: 'Alternating speed intervals with sets', icon: 'repeat' },
-      { route: 'distance', label: 'Distance', desc: 'Preset distance-based workouts', icon: 'target' },
-      { route: 'sprint', label: 'Sprint', desc: 'High-intensity sprint training', icon: 'sprint' }
+      { route: 'interval', label: 'Interval', desc: 'Alternating speed intervals with sets', icon: 'repeat' }
     ];
+    if (treadmillEnabled) {
+      modes.push({ route: 'distance', label: 'Distance', desc: 'Preset distance-based workouts', icon: 'target' });
+      modes.push({ route: 'sprint', label: 'Sprint', desc: 'High-intensity sprint training', icon: 'sprint' });
+    }
 
     var cards = modes.map(function (m) {
       return '<a href="#/' + m.route + '" class="mode-card">' +
@@ -1912,13 +1919,21 @@ var EdgeApp = (function () {
   }
 
   // ============ Boot ============
+  function loadFeatureFlags() {
+    return EdgeAPI.getPublicFeatures()
+      .then(function (flags) { featureFlags = flags || {}; })
+      .catch(function () { featureFlags = {}; });
+  }
+
   function init() {
     setTheme(getTheme());
 
     appEl = document.getElementById('app');
     if (!appEl) return;
 
-    handleRoute();
+    loadFeatureFlags().then(function () {
+      handleRoute();
+    });
     window.addEventListener('hashchange', handleRoute);
 
     setupWebSocket();
