@@ -72,8 +72,18 @@ async function main(): Promise<void> {
   // Modbus TCP client — connect to PLC (if configured)
   configureModbusClient();
 
-  // 6. Done
-  log.info('[6/6] Startup complete');
+  // 6. WiFi AP (if configured to auto-start)
+  log.info('[6/7] Checking WiFi AP configuration...');
+  try {
+    const { getWifiConfig, applyWifiConfig } = require('../admin/wifi-service');
+    const wifiCfg = getWifiConfig();
+    log.info(`WiFi AP configured: SSID="${wifiCfg.ssid}" Channel=${wifiCfg.channel}`);
+  } catch (err: any) {
+    log.debug(`WiFi AP check: ${err.message}`);
+  }
+
+  // 7. Done
+  log.info('[7/7] Startup complete');
   log.info('========================================');
   log.info(' SwimEx EDGE Server — Ready');
   log.info(`   Web UI:   http://0.0.0.0:${config.httpPort}`);

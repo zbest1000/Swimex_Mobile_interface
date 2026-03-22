@@ -51,8 +51,9 @@ export class MqttService extends EventEmitter {
     super();
     this.mqttConfig = { ...DEFAULT_MQTT_CONFIG, ...mqttCfg };
     this.topics = DEFAULT_TOPICS(config.poolId);
-    // Prevent unhandled error crashes
-    this.on('error', () => {});
+    this.on('error', (err: Error) => {
+      log.error('MqttService EventEmitter error', err?.message ?? 'unknown');
+    });
   }
 
   async start(): Promise<void> {

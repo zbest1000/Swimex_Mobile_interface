@@ -183,7 +183,7 @@ const EdgeAPI = (function () {
     async quickStart(speed, durationMs) {
       return await request('POST', '/api/workouts/quick-start', {
         speed: speed,
-        timeMs: durationMs
+        durationMs: durationMs
       });
     },
 
@@ -289,11 +289,11 @@ const EdgeAPI = (function () {
     },
 
     async disableUser(userId) {
-      return await request('POST', '/api/users/' + userId + '/disable');
+      return await request('PUT', '/api/users/' + userId + '/disable');
     },
 
     async enableUser(userId) {
-      return await request('POST', '/api/users/' + userId + '/enable');
+      return await request('PUT', '/api/users/' + userId + '/enable');
     },
 
     async deleteUser(userId) {
@@ -337,11 +337,11 @@ const EdgeAPI = (function () {
 
     // ---- Admin: Feature Flags ----
     async getFeatureFlags() {
-      return await request('GET', '/api/admin/features');
+      return await request('GET', '/api/admin/feature-flags');
     },
 
     async setFeatureFlag(key, enabled, visible) {
-      return await request('PUT', '/api/admin/features/' + key, {
+      return await request('PUT', '/api/admin/feature-flags/' + key, {
         enabled: enabled,
         visible: visible
       });
@@ -361,7 +361,7 @@ const EdgeAPI = (function () {
     },
 
     async publishLayout(id) {
-      return await request('POST', '/api/admin/layouts/' + id + '/publish');
+      return await request('PUT', '/api/admin/layouts/' + id + '/publish');
     },
 
     // ---- Admin: Audit Log ----
@@ -375,12 +375,12 @@ const EdgeAPI = (function () {
         });
       }
       const qs = q.length ? '?' + q.join('&') : '';
-      return await request('GET', '/api/admin/audit' + qs);
+      return await request('GET', '/api/admin/audit-log' + qs);
     },
 
     // ---- Graphics ----
     async listGraphics(params) {
-      const q = [];
+      var q = [];
       if (params) {
         Object.keys(params).forEach(function (k) {
           if (params[k] !== undefined && params[k] !== null) {
@@ -388,20 +388,89 @@ const EdgeAPI = (function () {
           }
         });
       }
-      const qs = q.length ? '?' + q.join('&') : '';
-      return await request('GET', '/api/admin/graphics' + qs);
+      var qs = q.length ? '?' + q.join('&') : '';
+      return await request('GET', '/api/graphics' + qs);
     },
 
     async getGraphic(id) {
-      return await request('GET', '/api/admin/graphics/' + id);
+      return await request('GET', '/api/graphics/' + id);
     },
 
     async uploadGraphic(formData) {
-      return await request('POST', '/api/admin/graphics', formData, { raw: true });
+      return await request('POST', '/api/graphics', formData, { raw: true });
     },
 
     async deleteGraphic(id) {
-      return await request('DELETE', '/api/admin/graphics/' + id);
+      return await request('DELETE', '/api/graphics/' + id);
+    },
+
+    // ---- Admin: WiFi AP Management ----
+    async getWifiConfig() {
+      return await request('GET', '/api/admin/wifi');
+    },
+
+    async updateWifiConfig(config) {
+      return await request('PUT', '/api/admin/wifi', config);
+    },
+
+    async startWifiAp() {
+      return await request('POST', '/api/admin/wifi/start');
+    },
+
+    async stopWifiAp() {
+      return await request('POST', '/api/admin/wifi/stop');
+    },
+
+    // ---- Admin: Config Export/Import ----
+    async exportConfig() {
+      return await request('GET', '/api/admin/config/export');
+    },
+
+    async importConfig(configData, options) {
+      return await request('POST', '/api/admin/config/import', {
+        config: configData,
+        overwrite: options ? options.overwrite : false,
+        sections: options ? options.sections : undefined
+      });
+    },
+
+    // ---- Admin: Branding ----
+    async getBranding() {
+      return await request('GET', '/api/admin/branding');
+    },
+
+    async updateBranding(data) {
+      return await request('PUT', '/api/admin/branding', data);
+    },
+
+    async getPublicBranding() {
+      return await request('GET', '/api/branding');
+    },
+
+    // ---- Admin: Logos ----
+    async listLogos() {
+      return await request('GET', '/api/admin/logos');
+    },
+
+    async uploadLogo(type, formData) {
+      return await request('POST', '/api/admin/logos/' + type, formData, { raw: true });
+    },
+
+    async deleteLogo(type) {
+      return await request('DELETE', '/api/admin/logos/' + type);
+    },
+
+    getLogoUrl(type) {
+      return getBaseUrl() + '/api/logos/' + type;
+    },
+
+    // ---- Admin: Device Bulk Import/Export ----
+    async exportDevices() {
+      return await request('GET', '/api/admin/devices/export');
+    },
+
+    async importDevices(devices) {
+      return await request('POST', '/api/admin/devices/import', { devices: devices });
     },
 
     // ---- Health ----

@@ -39,6 +39,30 @@ export function createApp(): express.Application {
     });
   });
 
+  // Public branding endpoint (no auth, used by clients for splash/branding display)
+  app.get('/api/branding', (_req: Request, res: Response) => {
+    try {
+      const brandingService = require('../admin/branding-service');
+      res.json({ success: true, data: brandingService.getBranding() });
+    } catch {
+      res.json({ success: true, data: null });
+    }
+  });
+
+  // Public logo endpoint (no auth, for displaying logos in the client UI)
+  app.get('/api/logos/:type', (req: Request, res: Response) => {
+    try {
+      const brandingService = require('../admin/branding-service');
+      const type = req.params.type as 'primary' | 'secondary' | 'favicon' | 'splash';
+      const { data, mimeType } = brandingService.getLogo(type);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.send(data);
+    } catch {
+      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Logo not found' } });
+    }
+  });
+
   // API routes
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
