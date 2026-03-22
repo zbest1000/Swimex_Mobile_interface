@@ -4,9 +4,10 @@ import * as authService from '../../src/auth/auth-service';
 import { UserRole, CommissioningOrg } from '../../src/shared/models';
 
 describe('AuthService', () => {
+  const testDataDir = '/tmp/edge-test-' + Date.now();
+
   beforeAll(() => {
-    process.env.DATA_DIR = '/tmp/edge-test-' + Date.now();
-    initDatabase();
+    initDatabase(testDataDir);
     runMigrations();
   });
 

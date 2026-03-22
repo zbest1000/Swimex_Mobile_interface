@@ -14,6 +14,7 @@ export interface TokenPayload {
   userId: string;
   username: string;
   role: UserRole;
+  sessionId?: string;
   iat?: number;
   exp?: number;
 }
@@ -52,7 +53,7 @@ export async function verifyPassword(hash: string, password: string): Promise<bo
 
 export function generateToken(payload: TokenPayload): string {
   return jwt.sign(
-    { userId: payload.userId, username: payload.username, role: payload.role },
+    { userId: payload.userId, username: payload.username, role: payload.role, sessionId: payload.sessionId },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn as any },
   );
@@ -121,11 +122,11 @@ export async function login(username: string, password: string, sourceIp?: strin
   db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(row.id);
 
   const user = toUserDTO(row);
-  const token = generateToken({ userId: user.id, username: user.username, role: user.role });
-
   const sessionId = uuidv4();
+  const token = generateToken({ userId: user.id, username: user.username, role: user.role, sessionId });
+
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expiresAt);
+  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(sessionId, user.id, expiresAt);
 
   auditLog('LOGIN_SUCCESS', user.id, 'auth', user.id, { sourceIp });
   log.info(`User logged in: ${username}`);
