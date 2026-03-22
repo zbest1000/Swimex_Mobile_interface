@@ -27,7 +27,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     // Check if session is still valid (not revoked)
     const db = getDb();
     const session = db.prepare(
-      'SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime("now")'
+      "SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime('now')"
     ).get(token) as Record<string, unknown> | undefined;
 
     if (!session) {
@@ -90,7 +90,7 @@ export function checkDeviceRegistration(req: Request, _res: Response, next: Next
     req.isRegisteredDevice = !!device;
 
     // Update last seen
-    db.prepare('UPDATE registered_devices SET last_seen_at = datetime("now") WHERE mac_address = ?').run(mac);
+    db.prepare("UPDATE registered_devices SET last_seen_at = datetime('now') WHERE mac_address = ?").run(mac);
   } else {
     req.isRegisteredDevice = false;
   }

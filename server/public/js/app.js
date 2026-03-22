@@ -454,11 +454,15 @@ var EdgeApp = (function () {
       errEl.style.display = 'none';
       var fd = new FormData(form);
       EdgeAPI.login(fd.get('username'), fd.get('password'))
-        .then(function () {
+        .then(function (result) {
           toast('Logged in successfully', 'success');
           EdgeWebSocket.disconnect();
           EdgeWebSocket.connect();
-          navigate('home');
+          if (result && result.commissioningRequired) {
+            navigate('commission');
+          } else {
+            navigate('home');
+          }
         })
         .catch(function (err) {
           errEl.textContent = err.message || 'Login failed';
@@ -1303,6 +1307,508 @@ var EdgeApp = (function () {
     });
   }
 
+  // ============ Commissioning Wizard ============
+  var commissionStep = 1;
+
+  function screenCommission() {
+    return '<div class="commission-wizard">' +
+      renderWizardProgress(commissionStep) +
+      '<div class="wizard-step" id="wizard-step-container">' +
+        renderWizardStepContent(commissionStep) +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderWizardProgress(step) {
+    var labels = ['Codes', 'Accounts', 'Network', 'Controller', 'Finalize'];
+    var html = '<div class="wizard-progress">';
+    for (var i = 0; i < 5; i++) {
+      var num = i + 1;
+      var cls = 'step';
+      if (num < step) cls += ' completed';
+      else if (num === step) cls += ' active';
+      html += '<div class="' + cls + '">' +
+        '<div class="step-circle">' + (num < step ? '&#x2714;' : num) + '</div>' +
+        '<div class="step-label">' + labels[i] + '</div>' +
+      '</div>';
+      if (i < 4) html += '<div class="step-line' + (num < step ? ' completed' : '') + '"></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderWizardStepContent(step) {
+    switch (step) {
+      case 1: return renderCommissionStep1();
+      case 2: return renderCommissionStep2();
+      case 3: return renderCommissionStep3();
+      case 4: return renderCommissionStep4();
+      case 5: return renderCommissionStep5();
+      default: return renderCommissionStep1();
+    }
+  }
+
+  function renderCommissionStep1() {
+    return '<h2 class="wizard-title">Step 1 of 5 &mdash; Commissioning Codes</h2>' +
+      '<p class="wizard-desc">Enter the commissioning codes provided by SwimEx and BSC Industries. These codes protect the Super Admin account and cannot be changed later.</p>' +
+      '<div class="form-group">' +
+        '<label class="form-label">SwimEx Code</label>' +
+        '<div class="code-input-group" data-code="swimex">' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="0" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="1" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="2" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="3" placeholder="XXXXXX">' +
+        '</div>' +
+        '<div class="form-error wizard-field-error" id="err-swimex"></div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">BSC Industries Code</label>' +
+        '<div class="code-input-group" data-code="bsc">' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="0" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="1" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="2" placeholder="XXXXXX">' +
+          '<span class="code-dash">&ndash;</span>' +
+          '<input type="text" class="code-segment" maxlength="6" data-seg="3" placeholder="XXXXXX">' +
+        '</div>' +
+        '<div class="form-error wizard-field-error" id="err-bsc"></div>' +
+      '</div>' +
+      '<div class="wizard-buttons">' +
+        '<span></span>' +
+        '<button class="btn btn-primary" id="wiz-next">Next</button>' +
+      '</div>';
+  }
+
+  function renderCommissionStep2() {
+    return '<h2 class="wizard-title">Step 2 of 5 &mdash; Account Setup</h2>' +
+      '<p class="wizard-desc">Change the default Super Admin password and create an Administrator account.</p>' +
+      '<div class="form-group">' +
+        '<label class="form-label">New Super Admin Password</label>' +
+        '<input type="password" class="form-input" id="wiz-sa-pass" placeholder="Min 8 characters" minlength="8">' +
+        '<div class="form-error wizard-field-error" id="err-sa-pass"></div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Confirm Super Admin Password</label>' +
+        '<input type="password" class="form-input" id="wiz-sa-pass2" placeholder="Confirm password">' +
+        '<div class="form-error wizard-field-error" id="err-sa-pass2"></div>' +
+      '</div>' +
+      '<div class="divider"></div>' +
+      '<h3 class="wizard-section-title">Administrator Account</h3>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Admin Username</label>' +
+        '<input type="text" class="form-input" id="wiz-admin-user" placeholder="Min 3 characters" minlength="3">' +
+        '<div class="form-error wizard-field-error" id="err-admin-user"></div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Admin Display Name</label>' +
+        '<input type="text" class="form-input" id="wiz-admin-display" placeholder="Display name">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Admin Password</label>' +
+        '<input type="password" class="form-input" id="wiz-admin-pass" placeholder="Min 6 characters" minlength="6">' +
+        '<div class="form-error wizard-field-error" id="err-admin-pass"></div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Confirm Admin Password</label>' +
+        '<input type="password" class="form-input" id="wiz-admin-pass2" placeholder="Confirm password">' +
+        '<div class="form-error wizard-field-error" id="err-admin-pass2"></div>' +
+      '</div>' +
+      '<div class="wizard-buttons">' +
+        '<button class="btn btn-ghost" id="wiz-back">Back</button>' +
+        '<button class="btn btn-primary" id="wiz-next">Next</button>' +
+      '</div>';
+  }
+
+  function renderCommissionStep3() {
+    var channelOpts = '';
+    for (var ch = 1; ch <= 11; ch++) {
+      channelOpts += '<option value="' + ch + '"' + (ch === 6 ? ' selected' : '') + '>' + ch + '</option>';
+    }
+
+    return '<h2 class="wizard-title">Step 3 of 5 &mdash; Network</h2>' +
+      '<p class="wizard-desc">Configure the Wi-Fi access point for tablets to connect.</p>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Wi-Fi Network Name (SSID)</label>' +
+        '<input type="text" class="form-input" id="wiz-ssid" value="PoolCtrl">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Wi-Fi Password</label>' +
+        '<input type="password" class="form-input" id="wiz-wifi-pass" placeholder="Enter Wi-Fi password">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Wi-Fi Channel</label>' +
+        '<select class="form-input" id="wiz-wifi-ch">' + channelOpts + '</select>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Server IP Address</label>' +
+        '<input type="text" class="form-input" id="wiz-server-ip" placeholder="auto-detect">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Subnet Mask</label>' +
+        '<input type="text" class="form-input" id="wiz-subnet" value="255.255.255.0">' +
+      '</div>' +
+      '<div class="wizard-buttons">' +
+        '<button class="btn btn-ghost" id="wiz-back">Back</button>' +
+        '<button class="btn btn-primary" id="wiz-next">Next</button>' +
+      '</div>';
+  }
+
+  function renderCommissionStep4() {
+    return '<h2 class="wizard-title">Step 4 of 5 &mdash; Pool Controller</h2>' +
+      '<p class="wizard-desc">Configure how the server communicates with the pool\'s PLC controller.</p>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Protocol</label>' +
+        '<select class="form-input" id="wiz-plc-proto">' +
+          '<option value="MQTT" selected>MQTT</option>' +
+          '<option value="MODBUS_TCP">Modbus TCP</option>' +
+          '<option value="HTTP">HTTP</option>' +
+        '</select>' +
+      '</div>' +
+      '<div id="wiz-plc-fields">' +
+        renderPlcFields('MQTT') +
+      '</div>' +
+      '<p class="text-center mt-2"><a href="#" class="wizard-skip-link" id="wiz-skip">Skip &mdash; configure later from Admin Panel</a></p>' +
+      '<div class="wizard-buttons">' +
+        '<button class="btn btn-ghost" id="wiz-back">Back</button>' +
+        '<button class="btn btn-primary" id="wiz-next">Next</button>' +
+      '</div>';
+  }
+
+  function renderPlcFields(proto) {
+    if (proto === 'MQTT') {
+      return '<div class="form-group">' +
+        '<label class="form-label">MQTT Topic Prefix</label>' +
+        '<input type="text" class="form-input" id="wiz-mqtt-prefix" value="swimex/default">' +
+      '</div>';
+    }
+    if (proto === 'MODBUS_TCP') {
+      return '<div class="form-group">' +
+          '<label class="form-label">PLC IP Address</label>' +
+          '<input type="text" class="form-input" id="wiz-plc-ip" placeholder="192.168.1.100">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">PLC Port</label>' +
+          '<input type="number" class="form-input" id="wiz-plc-port" value="502">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">Unit ID</label>' +
+          '<input type="number" class="form-input" id="wiz-plc-unit" value="1">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">Polling Interval (ms)</label>' +
+          '<input type="number" class="form-input" id="wiz-plc-poll" value="500">' +
+        '</div>';
+    }
+    if (proto === 'HTTP') {
+      return '<div class="form-group">' +
+        '<label class="form-label">PLC URL</label>' +
+        '<input type="text" class="form-input" id="wiz-plc-url" placeholder="http://192.168.1.100/api">' +
+      '</div>';
+    }
+    return '';
+  }
+
+  function renderCommissionStep5() {
+    var templates = [
+      { id: 'modern', name: 'Modern', desc: 'Clean lines, vibrant accents, glassmorphism effects', color: '#00D9FF' },
+      { id: 'classic', name: 'Classic', desc: 'Traditional pool-blue palette, familiar layout', color: '#62B6CB' },
+      { id: 'clinical', name: 'Clinical', desc: 'Calm teal tones, high contrast for clinical settings', color: '#4ECDC4' },
+      { id: 'sport', name: 'Sport', desc: 'Bold neon-on-dark for high-energy athletic facilities', color: '#00BCD4' },
+      { id: 'minimal', name: 'Minimal', desc: 'Muted grays, understated design for simplicity', color: '#4A90A4' }
+    ];
+
+    var templateCards = templates.map(function (t) {
+      var selected = t.id === 'modern' ? ' selected' : '';
+      return '<div class="template-card' + selected + '" data-template="' + t.id + '">' +
+        '<div class="template-swatch" style="background:' + t.color + ';"></div>' +
+        '<div class="template-name">' + t.name + '</div>' +
+        '<div class="template-desc">' + t.desc + '</div>' +
+      '</div>';
+    }).join('');
+
+    return '<h2 class="wizard-title">Step 5 of 5 &mdash; Finalize</h2>' +
+      '<p class="wizard-desc">Register pool-side tablets and choose a UI template.</p>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Register Tablets (optional)</label>' +
+        '<div class="tablet-list" id="wiz-tablet-list"></div>' +
+        '<button class="btn btn-ghost btn-sm mt-1" id="wiz-add-tablet">+ Add Tablet</button>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">UI Template</label>' +
+        '<div class="template-cards" id="wiz-templates">' + templateCards + '</div>' +
+      '</div>' +
+      '<div class="wizard-buttons">' +
+        '<button class="btn btn-ghost" id="wiz-back">Back</button>' +
+        '<button class="btn btn-success btn-lg" id="wiz-complete">Complete Setup</button>' +
+      '</div>';
+  }
+
+  function clearWizardErrors() {
+    $$('.wizard-field-error').forEach(function (el) { el.textContent = ''; });
+  }
+
+  function setWizardError(id, msg) {
+    var el = $('#' + id);
+    if (el) el.textContent = msg;
+  }
+
+  function setWizardButtonLoading(btn, loading) {
+    if (!btn) return;
+    if (loading) {
+      btn.disabled = true;
+      btn.setAttribute('data-orig-text', btn.textContent);
+      btn.textContent = 'Please wait...';
+    } else {
+      btn.disabled = false;
+      btn.textContent = btn.getAttribute('data-orig-text') || 'Next';
+    }
+  }
+
+  function updateWizardView() {
+    var container = $('.commission-wizard');
+    if (!container) return;
+    container.innerHTML = renderWizardProgress(commissionStep) +
+      '<div class="wizard-step" id="wizard-step-container">' +
+        renderWizardStepContent(commissionStep) +
+      '</div>';
+    bindWizardEvents();
+  }
+
+  function getCodeValue(groupSel) {
+    var segments = $$('.code-segment', $(groupSel));
+    var parts = segments.map(function (inp) { return inp.value.trim().toUpperCase(); });
+    if (parts.some(function (p) { return p.length !== 6; })) return null;
+    return parts.join('-');
+  }
+
+  function bindWizardEvents() {
+    // Code segment auto-advance and uppercase enforcement
+    $$('.code-segment').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (inp.value.length === 6) {
+          var parent = inp.closest('.code-input-group');
+          var seg = parseInt(inp.getAttribute('data-seg'));
+          var next = parent ? parent.querySelector('[data-seg="' + (seg + 1) + '"]') : null;
+          if (next) next.focus();
+        }
+      });
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && inp.value.length === 0) {
+          var parent = inp.closest('.code-input-group');
+          var seg = parseInt(inp.getAttribute('data-seg'));
+          var prev = parent ? parent.querySelector('[data-seg="' + (seg - 1) + '"]') : null;
+          if (prev) { prev.focus(); prev.setSelectionRange(prev.value.length, prev.value.length); }
+        }
+      });
+    });
+
+    // Protocol switcher for step 4
+    var protoSelect = $('#wiz-plc-proto');
+    if (protoSelect) {
+      protoSelect.addEventListener('change', function () {
+        var fieldsEl = $('#wiz-plc-fields');
+        if (fieldsEl) fieldsEl.innerHTML = renderPlcFields(protoSelect.value);
+      });
+    }
+
+    // Skip link for step 4
+    var skipLink = $('#wiz-skip');
+    if (skipLink) {
+      skipLink.addEventListener('click', function (e) {
+        e.preventDefault();
+        var btn = $('#wiz-next');
+        setWizardButtonLoading(btn, true);
+        EdgeAPI.commissionStep4({ protocol: 'MQTT', mqttTopicPrefix: 'swimex/default' })
+          .then(function () {
+            commissionStep = 5;
+            updateWizardView();
+          })
+          .catch(function (err) {
+            toast(err.message || 'Failed', 'error');
+            setWizardButtonLoading(btn, false);
+          });
+      });
+    }
+
+    // Template card selection
+    $$('.template-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        $$('.template-card').forEach(function (c) { c.classList.remove('selected'); });
+        card.classList.add('selected');
+      });
+    });
+
+    // Add tablet row
+    var addTabletBtn = $('#wiz-add-tablet');
+    if (addTabletBtn) {
+      addTabletBtn.addEventListener('click', function () {
+        var list = $('#wiz-tablet-list');
+        if (!list) return;
+        var row = document.createElement('div');
+        row.className = 'tablet-row';
+        row.innerHTML =
+          '<input type="text" class="form-input tablet-mac" placeholder="AA:BB:CC:DD:EE:FF">' +
+          '<input type="text" class="form-input tablet-name" placeholder="Tablet name">' +
+          '<button class="btn btn-sm btn-danger tablet-remove">&times;</button>';
+        row.querySelector('.tablet-remove').addEventListener('click', function () { row.remove(); });
+        list.appendChild(row);
+      });
+    }
+
+    // Back button
+    var backBtn = $('#wiz-back');
+    if (backBtn) {
+      backBtn.addEventListener('click', function () {
+        if (commissionStep > 1) {
+          commissionStep--;
+          updateWizardView();
+        }
+      });
+    }
+
+    // Next / Complete button
+    var nextBtn = $('#wiz-next');
+    if (nextBtn) {
+      nextBtn.addEventListener('click', function () { handleWizardNext(nextBtn); });
+    }
+
+    var completeBtn = $('#wiz-complete');
+    if (completeBtn) {
+      completeBtn.addEventListener('click', function () { handleWizardNext(completeBtn); });
+    }
+  }
+
+  function handleWizardNext(btn) {
+    clearWizardErrors();
+
+    if (commissionStep === 1) {
+      var swimexCode = getCodeValue('[data-code="swimex"]');
+      var bscCode = getCodeValue('[data-code="bsc"]');
+      if (!swimexCode) { setWizardError('err-swimex', 'Enter all 4 segments (6 characters each)'); return; }
+      if (!bscCode) { setWizardError('err-bsc', 'Enter all 4 segments (6 characters each)'); return; }
+
+      setWizardButtonLoading(btn, true);
+      EdgeAPI.commissionStep1(swimexCode, bscCode)
+        .then(function () { commissionStep = 2; updateWizardView(); })
+        .catch(function (err) { toast(err.message || 'Failed', 'error'); setWizardButtonLoading(btn, false); });
+    }
+
+    else if (commissionStep === 2) {
+      var saPass = $('#wiz-sa-pass').value;
+      var saPass2 = $('#wiz-sa-pass2').value;
+      var adminUser = $('#wiz-admin-user').value.trim();
+      var adminDisplay = $('#wiz-admin-display').value.trim();
+      var adminPass = $('#wiz-admin-pass').value;
+      var adminPass2 = $('#wiz-admin-pass2').value;
+
+      var hasError = false;
+      if (!saPass || saPass.length < 8) { setWizardError('err-sa-pass', 'Must be at least 8 characters'); hasError = true; }
+      if (saPass !== saPass2) { setWizardError('err-sa-pass2', 'Passwords do not match'); hasError = true; }
+      if (!adminUser || adminUser.length < 3) { setWizardError('err-admin-user', 'Must be at least 3 characters'); hasError = true; }
+      if (!adminPass || adminPass.length < 6) { setWizardError('err-admin-pass', 'Must be at least 6 characters'); hasError = true; }
+      if (adminPass !== adminPass2) { setWizardError('err-admin-pass2', 'Passwords do not match'); hasError = true; }
+      if (hasError) return;
+
+      setWizardButtonLoading(btn, true);
+      EdgeAPI.commissionStep2(saPass, adminUser, adminPass, adminDisplay || adminUser)
+        .then(function () { commissionStep = 3; updateWizardView(); })
+        .catch(function (err) { toast(err.message || 'Failed', 'error'); setWizardButtonLoading(btn, false); });
+    }
+
+    else if (commissionStep === 3) {
+      var networkConfig = {
+        wifiSsid: $('#wiz-ssid').value.trim() || 'PoolCtrl',
+        wifiPassword: $('#wiz-wifi-pass').value,
+        wifiChannel: parseInt($('#wiz-wifi-ch').value) || 6,
+        serverIp: $('#wiz-server-ip').value.trim(),
+        subnetMask: $('#wiz-subnet').value.trim() || '255.255.255.0'
+      };
+
+      setWizardButtonLoading(btn, true);
+      EdgeAPI.commissionStep3(networkConfig)
+        .then(function () { commissionStep = 4; updateWizardView(); })
+        .catch(function (err) { toast(err.message || 'Failed', 'error'); setWizardButtonLoading(btn, false); });
+    }
+
+    else if (commissionStep === 4) {
+      var proto = $('#wiz-plc-proto').value;
+      var plcConfig = { protocol: proto };
+
+      if (proto === 'MQTT') {
+        plcConfig.mqttTopicPrefix = ($('#wiz-mqtt-prefix') && $('#wiz-mqtt-prefix').value.trim()) || 'swimex/default';
+      } else if (proto === 'MODBUS_TCP') {
+        plcConfig.plcIp = $('#wiz-plc-ip') ? $('#wiz-plc-ip').value.trim() : '';
+        plcConfig.plcPort = $('#wiz-plc-port') ? parseInt($('#wiz-plc-port').value) || 502 : 502;
+        plcConfig.modbusUnitId = $('#wiz-plc-unit') ? parseInt($('#wiz-plc-unit').value) || 1 : 1;
+        plcConfig.pollingIntervalMs = $('#wiz-plc-poll') ? parseInt($('#wiz-plc-poll').value) || 500 : 500;
+      } else if (proto === 'HTTP') {
+        plcConfig.plcUrl = $('#wiz-plc-url') ? $('#wiz-plc-url').value.trim() : '';
+      }
+
+      setWizardButtonLoading(btn, true);
+      EdgeAPI.commissionStep4(plcConfig)
+        .then(function () { commissionStep = 5; updateWizardView(); })
+        .catch(function (err) { toast(err.message || 'Failed', 'error'); setWizardButtonLoading(btn, false); });
+    }
+
+    else if (commissionStep === 5) {
+      var tabletMacs = [];
+      $$('.tablet-row').forEach(function (row) {
+        var mac = row.querySelector('.tablet-mac').value.trim();
+        var name = row.querySelector('.tablet-name').value.trim();
+        if (mac) tabletMacs.push({ mac: mac, name: name || 'Pool Tablet' });
+      });
+
+      var selectedTemplate = $('.template-card.selected');
+      var template = selectedTemplate ? selectedTemplate.getAttribute('data-template') : 'modern';
+
+      setWizardButtonLoading(btn, true);
+      EdgeAPI.commissionStep5(tabletMacs, template)
+        .then(function () {
+          showCommissionSuccess();
+        })
+        .catch(function (err) { toast(err.message || 'Failed', 'error'); setWizardButtonLoading(btn, false); });
+    }
+  }
+
+  function showCommissionSuccess() {
+    var container = $('.commission-wizard');
+    if (!container) return;
+    container.innerHTML =
+      '<div class="wizard-success">' +
+        '<div class="wizard-success-icon">&#x2714;</div>' +
+        '<h2 class="wizard-success-title">System Commissioned!</h2>' +
+        '<p class="wizard-success-msg">Your SwimEx EDGE system is fully set up and ready to use.</p>' +
+        '<button class="btn btn-success btn-lg" id="wiz-go-home">Go to Dashboard</button>' +
+      '</div>';
+    var goBtn = $('#wiz-go-home');
+    if (goBtn) {
+      goBtn.addEventListener('click', function () { navigate('home'); });
+    }
+  }
+
+  function initCommission() {
+    EdgeAPI.getCommissionStatus()
+      .then(function (status) {
+        if (status && status.commissioned) {
+          navigate('home');
+          return;
+        }
+        var savedStep = (status && status.currentStep) ? status.currentStep + 1 : 1;
+        if (savedStep > 5) savedStep = 5;
+        commissionStep = savedStep;
+        updateWizardView();
+      })
+      .catch(function () {
+        bindWizardEvents();
+      });
+  }
+
   // ============ Main Render ============
   function renderApp() {
     if (!appEl) return;
@@ -1312,6 +1818,7 @@ var EdgeApp = (function () {
       case 'home': screenHtml = screenHome(); break;
       case 'login': screenHtml = screenLogin(); break;
       case 'register': screenHtml = screenRegister(); break;
+      case 'commission': screenHtml = screenCommission(); break;
       case 'quick-start': screenHtml = screenQuickStart(); break;
       case 'custom-programs': screenHtml = screenCustomPrograms(); break;
       case 'interval': screenHtml = screenInterval(); break;
@@ -1332,6 +1839,7 @@ var EdgeApp = (function () {
     switch (currentRoute) {
       case 'login': initLogin(); break;
       case 'register': initRegister(); break;
+      case 'commission': initCommission(); break;
       case 'quick-start': initQuickStart(); break;
       case 'custom-programs': initCustomPrograms(); break;
       case 'interval': initInterval(); break;
@@ -1418,6 +1926,23 @@ var EdgeApp = (function () {
     setTimeout(function () {
       EdgeWebSocket.connect();
     }, 100);
+
+    EdgeAPI.getSystemStatus()
+      .then(function (status) {
+        if (status && !status.commissioned) {
+          var role = (EdgeAPI.getRole() || '').toLowerCase();
+          var isSuperAdmin = role === 'super_admin' || role === 'super_administrator';
+          if (EdgeAPI.isLoggedIn() && isSuperAdmin) {
+            if (currentRoute !== 'commission') navigate('commission');
+          } else if (!EdgeAPI.isLoggedIn() && currentRoute !== 'login') {
+            navigate('login');
+            setTimeout(function () {
+              toast('This system needs to be set up. Log in as Super Admin to begin.', 'info');
+            }, 300);
+          }
+        }
+      })
+      .catch(function () {});
 
     setTimeout(function () {
       if (EdgeAPI.isLoggedIn()) {

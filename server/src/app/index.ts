@@ -12,6 +12,7 @@ import { dataBridge } from '../communication/data-bridge';
 import { workoutEngine } from '../workouts/workout-engine';
 import { tagDatabase } from '../tags/tag-database';
 import { DataType, ByteOrder } from '../shared/models';
+import { seedDefaults } from '../database/seed';
 
 const log = createLogger('app');
 
@@ -22,54 +23,65 @@ async function main(): Promise<void> {
   log.info('========================================');
 
   // 1. Initialize database
-  log.info('[1/7] Initializing SQLite database...');
+  log.info('[1/8] Initializing SQLite database...');
   initDatabase();
   runMigrations();
 
+  // 1b. Auto-seed defaults for quick deployment
+  log.info('[1b/8] Checking for first-run setup...');
+  await seedDefaults();
+
   // 2. Register core PLC tags
-  log.info('[2/7] Registering core PLC tags...');
+  log.info('[2/6] Registering core PLC tags...');
   registerCoreTags();
 
-  // 3. Connect to Eclipse Mosquitto MQTT broker
-  log.info('[3/7] Connecting to Mosquitto MQTT broker...');
-  try {
-    await mqttBroker.start();
-  } catch (err: any) {
-    log.warn(`MQTT broker connection deferred (will retry): ${err.message}`);
-  }
-
-  // 4. Initialize data bridge (loads tag mappings, sets up protocol sync)
-  log.info('[4/7] Initializing data bridge...');
+  // 3. Initialize data bridge (loads tag mappings from DB)
+  log.info('[3/6] Initializing data bridge...');
   dataBridge.initialize();
 
-  // 5. Start Modbus TCP server
-  log.info('[5/7] Starting Modbus TCP server...');
-  try {
-    await modbusServer.start();
-  } catch (err: any) {
-    log.warn(`Modbus TCP server start deferred: ${err.message}`);
-  }
-
-  // 6. Start Modbus TCP client (PLC polling) if configured
-  log.info('[6/7] Configuring Modbus TCP client...');
-  configureModbusClient();
-
-  // 7. Start HTTP server + WebSocket
-  log.info('[7/7] Starting HTTP server...');
+  // 4. Start HTTP server + WebSocket (start this FIRST so the UI is available)
+  log.info('[4/6] Starting HTTP server...');
   const app = createApp();
   const httpServer = http.createServer(app);
   wsHandler.attach(httpServer);
 
-  httpServer.listen(config.httpPort, '0.0.0.0', () => {
-    log.info('========================================');
-    log.info(' SwimEx EDGE Server — Ready');
-    log.info(`   HTTP:     http://0.0.0.0:${config.httpPort}`);
-    log.info(`   WebSocket ws://0.0.0.0:${config.httpPort}/ws`);
-    log.info(`   MQTT:     ${mqttBroker.isConnected() ? 'Connected' : 'Connecting...'} (Eclipse Mosquitto)`);
-    log.info(`   Modbus:   tcp://0.0.0.0:${config.modbusPort}`);
-    log.info(`   Pool ID:  ${config.poolId}`);
-    log.info('========================================');
+  await new Promise<void>((resolve) => {
+    httpServer.listen(config.httpPort, '0.0.0.0', () => {
+      log.info(`HTTP server listening on port ${config.httpPort}`);
+      resolve();
+    });
   });
+
+  // 5. Connect to communication services in background (non-blocking)
+  log.info('[5/6] Connecting to communication services (background)...');
+
+  // MQTT — connect to Eclipse Mosquitto (retries automatically)
+  mqttBroker.start().then(() => {
+    log.info('MQTT broker connected');
+  }).catch((err: any) => {
+    log.warn(`MQTT connection pending (will keep retrying): ${err.message ?? 'connection refused'}`);
+  });
+
+  // Modbus TCP server — expose registers to external systems
+  modbusServer.start().then(() => {
+    log.info('Modbus TCP server started');
+  }).catch((err: any) => {
+    log.warn(`Modbus TCP server deferred: ${err.message}`);
+  });
+
+  // Modbus TCP client — connect to PLC (if configured)
+  configureModbusClient();
+
+  // 6. Done
+  log.info('[6/6] Startup complete');
+  log.info('========================================');
+  log.info(' SwimEx EDGE Server — Ready');
+  log.info(`   Web UI:   http://0.0.0.0:${config.httpPort}`);
+  log.info(`   WebSocket ws://0.0.0.0:${config.httpPort}/ws`);
+  log.info(`   MQTT:     ${mqttBroker.isConnected() ? 'Connected' : 'Connecting in background...'}`);
+  log.info(`   Modbus:   tcp://0.0.0.0:${config.modbusPort}`);
+  log.info(`   Pool ID:  ${config.poolId}`);
+  log.info('========================================');
 
   // Safety stop: detect PLC heartbeat loss
   mqttBroker.on('keepalive:plc_timeout', () => {

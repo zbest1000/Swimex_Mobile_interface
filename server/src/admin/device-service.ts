@@ -65,7 +65,7 @@ export function registerDevice(
 
   const existing = db.prepare('SELECT id FROM registered_devices WHERE mac_address = ?').get(normalized);
   if (existing) {
-    db.prepare('UPDATE registered_devices SET is_registered = 1, device_name = ?, device_type = ?, registered_by = ?, registered_at = datetime("now") WHERE mac_address = ?')
+    db.prepare("UPDATE registered_devices SET is_registered = 1, device_name = ?, device_type = ?, registered_by = ?, registered_at = datetime('now') WHERE mac_address = ?")
       .run(deviceName, deviceType, registeredBy, normalized);
     auditLog('DEVICE_REGISTERED', registeredBy, 'device', normalized, { deviceName });
     log.info(`Device re-registered: ${normalized}`);
@@ -105,7 +105,7 @@ export function trackDeviceSeen(mac: string): void {
   const normalized = mac.toUpperCase();
   const existing = db.prepare('SELECT id FROM registered_devices WHERE mac_address = ?').get(normalized);
   if (existing) {
-    db.prepare('UPDATE registered_devices SET last_seen_at = datetime("now") WHERE mac_address = ?').run(normalized);
+    db.prepare("UPDATE registered_devices SET last_seen_at = datetime('now') WHERE mac_address = ?").run(normalized);
   } else {
     db.prepare('INSERT INTO registered_devices (id, mac_address, device_name, device_type, is_registered) VALUES (?, ?, ?, ?, 0)')
       .run(uuidv4(), normalized, 'Unknown Device', DeviceType.OTHER);
