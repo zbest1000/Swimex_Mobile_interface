@@ -289,7 +289,7 @@ export function getUserPreferences(userId: string): Record<string, unknown> | nu
   return db.prepare('SELECT * FROM user_preferences WHERE user_id = ?').get(userId) as Record<string, unknown> | null;
 }
 
-export function updateUserPreferences(userId: string, prefs: Partial<{ theme: string; defaultSpeed: number; fitnessLevel: string; activeTemplate: string }>): void {
+export function updateUserPreferences(userId: string, prefs: Partial<{ theme: string; defaultSpeed: number; fitnessLevel: string; activeTemplate: string; language: string }>): void {
   const db = getDb();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -298,6 +298,7 @@ export function updateUserPreferences(userId: string, prefs: Partial<{ theme: st
   if (prefs.defaultSpeed !== undefined) { fields.push('default_speed = ?'); values.push(prefs.defaultSpeed); }
   if (prefs.fitnessLevel !== undefined) { fields.push('fitness_level = ?'); values.push(prefs.fitnessLevel); }
   if (prefs.activeTemplate !== undefined) { fields.push('active_template = ?'); values.push(prefs.activeTemplate); }
+  if (prefs.language !== undefined) { fields.push('language = ?'); values.push(prefs.language); }
 
   if (fields.length > 0) {
     values.push(userId);

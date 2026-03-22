@@ -2109,6 +2109,54 @@ button, input, select, textarea {
   background: var(--color-text-muted);
 }
 
+/* ======================== Language Picker ======================== */
+.lang-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.lang-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: var(--touch-min);
+}
+
+.lang-picker-item:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.lang-picker-item.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-muted);
+}
+
+.lang-picker-name {
+  font-weight: 600;
+}
+
+.lang-picker-native {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+}
+
+.lang-picker-check {
+  color: var(--color-accent);
+  font-size: 1.2rem;
+}
+
 /* ======================== Print ======================== */
 @media print {
   .top-nav,

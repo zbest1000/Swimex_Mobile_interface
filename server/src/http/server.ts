@@ -80,6 +80,44 @@ export function createApp(): express.Application {
     }
   });
 
+  // Public i18n endpoints (no auth — clients fetch languages and translations)
+  app.get('/api/i18n/config', (_req: Request, res: Response) => {
+    try {
+      const i18nService = require('../admin/i18n-service');
+      res.json({
+        success: true,
+        data: {
+          defaultLocale: i18nService.getDefaultLocale(),
+          autoDetect: i18nService.isAutoLocaleEnabled(),
+        },
+      });
+    } catch {
+      res.json({ success: true, data: { defaultLocale: 'en', autoDetect: false } });
+    }
+  });
+
+  app.get('/api/i18n/languages', (_req: Request, res: Response) => {
+    try {
+      const i18nService = require('../admin/i18n-service');
+      res.json({ success: true, data: i18nService.listLanguages() });
+    } catch {
+      res.json({ success: true, data: [] });
+    }
+  });
+
+  app.get('/api/i18n/:locale', (req: Request, res: Response) => {
+    try {
+      const i18nService = require('../admin/i18n-service');
+      const translations = i18nService.getTranslations(req.params.locale);
+      if (!translations) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Language pack not found' } });
+      }
+      res.json({ success: true, data: translations });
+    } catch {
+      res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Failed to load translations' } });
+    }
+  });
+
   // API routes
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
