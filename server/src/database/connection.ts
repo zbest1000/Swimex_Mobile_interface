@@ -15,11 +15,12 @@ export function getDb(): Database.Database {
   return db;
 }
 
-export function initDatabase(): Database.Database {
+export function initDatabase(dataDir?: string): Database.Database {
   if (db) return db;
 
-  fs.mkdirSync(config.dataDir, { recursive: true });
-  const dbPath = path.join(config.dataDir, 'edge.db');
+  const dir = dataDir ?? process.env.DATA_DIR ?? config.dataDir;
+  fs.mkdirSync(dir, { recursive: true });
+  const dbPath = path.join(dir, 'edge.db');
   log.info(`Opening database at ${dbPath}`);
 
   db = new Database(dbPath);
@@ -32,7 +33,11 @@ export function initDatabase(): Database.Database {
 
 export function closeDatabase(): void {
   if (db) {
-    db.close();
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
     db = null;
     log.info('Database closed');
   }
