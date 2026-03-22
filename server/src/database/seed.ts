@@ -31,18 +31,17 @@ export async function seedDefaults(): Promise<void> {
 
   // Create default Super Admin — this is the only account that exists before commissioning
   try {
-    await authService.createUser('superadmin', 'superadmin', 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
-    log.info('Created initial Super Administrator: superadmin / superadmin');
+    await authService.createUser('admin', 'admin', 'Administrator', UserRole.SUPER_ADMINISTRATOR);
+    log.info('Created initial Super Administrator: admin / admin');
   } catch (err: any) {
     log.warn(`Super admin creation: ${err.message}`);
   }
 
-  // Seed default feature flags
   log.info('========================================');
   log.info(' First-Run Setup Required');
   log.info('========================================');
   log.info(' 1. Open the web interface in a browser');
-  log.info(' 2. Log in as: superadmin / superadmin');
+  log.info(' 2. Log in as: admin / admin');
   log.info(' 3. Complete the commissioning wizard');
   log.info('========================================');
 }

@@ -39,7 +39,7 @@ export function loadConfig(): ServerConfig {
     heartbeatIntervalMs: parseInt(env('HEARTBEAT_INTERVAL_MS', '2000'), 10),
     heartbeatMissedThreshold: parseInt(env('HEARTBEAT_MISSED_THRESHOLD', '3'), 10),
     defaultAdminUser: env('ADMIN_USER', 'admin'),
-    defaultAdminPass: env('ADMIN_PASS', 'changeme'),
+    defaultAdminPass: env('ADMIN_PASS', 'admin'),
     poolId: env('POOL_ID', 'default'),
     logLevel: env('LOG_LEVEL', 'info'),
     simulatorMode: env('SIMULATOR_MODE', 'false') === 'true' || env('SIMULATOR_MODE', '0') === '1',

@@ -78,7 +78,7 @@ export async function createUser(
   const db = getDb();
 
   if (!username || username.length < 3) throw new ValidationError('Username must be at least 3 characters');
-  if (!password || password.length < 6) throw new ValidationError('Password must be at least 6 characters');
+  if (!password || password.length < 4) throw new ValidationError('Password must be at least 4 characters');
   if (!displayName) throw new ValidationError('Display name is required');
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
@@ -168,7 +168,7 @@ export async function updateUserRole(userId: string, newRole: UserRole, actorId:
 }
 
 export async function updatePassword(userId: string, newPassword: string, actorId?: string): Promise<void> {
-  if (!newPassword || newPassword.length < 6) throw new ValidationError('Password must be at least 6 characters');
+  if (!newPassword || newPassword.length < 4) throw new ValidationError('Password must be at least 4 characters');
   const db = getDb();
   const hash = await hashPassword(newPassword);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
