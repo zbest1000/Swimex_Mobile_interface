@@ -245,7 +245,9 @@ export class ModbusTcpClient extends EventEmitter {
                          typeof tagValue.value === 'boolean' ? (tagValue.value ? 1 : 0) : 0;
 
           if (this.config.writeStrategy === 'WRITE_ON_CHANGE') {
-            this.writeRegisterImmediate(reg.startAddress + tagIdx, numVal, reg.type === 'coil').catch(() => {});
+            this.writeRegisterImmediate(reg.startAddress + tagIdx, numVal, reg.type === 'coil').catch((err: any) => {
+              log.warn(`Write-through failed for addr ${reg.startAddress + tagIdx}: ${err?.message ?? 'unknown'}`);
+            });
           } else {
             this.pendingWrites.set(reg.startAddress + tagIdx, numVal);
           }
@@ -331,7 +333,11 @@ export class ModbusTcpClient extends EventEmitter {
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.writeTimer) { clearInterval(this.writeTimer); this.writeTimer = null; }
     if (this.connected) {
-      try { this.client.close(() => {}); } catch { /* ignore */ }
+      try {
+        this.client.close(() => { log.debug('Modbus client socket closed'); });
+      } catch (err: any) {
+        log.debug(`Modbus client close: ${err?.message ?? 'unknown'}`);
+      }
       this.connected = false;
       log.info('Modbus TCP client disconnected');
     }

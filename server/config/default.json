@@ -39,7 +39,13 @@
   },
   "wifi": {
     "defaultSSID": "PoolCtrl",
-    "channel": 6
+    "defaultPassword": "swimex2024",
+    "channel": 6,
+    "band": "2.4GHz",
+    "hidden": false,
+    "maxClients": 10,
+    "interface": "wlan0",
+    "autoStart": false
   },
   "ui": {
     "defaultTemplate": "modern",

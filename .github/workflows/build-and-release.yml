@@ -1,0 +1,172 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+        type: string
+      build_docker:
+        description: 'Build and push Docker image'
+        required: false
+        type: boolean
+        default: true
+      create_release:
+        description: 'Create GitHub release with deployment artifacts'
+        required: false
+        type: boolean
+        default: true
+      docker_registry:
+        description: 'Docker registry (ghcr.io or docker.io)'
+        required: false
+        type: string
+        default: 'ghcr.io'
+
+env:
+  DOCKER_IMAGE_NAME: swimex/edge-server
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-server:
+    name: Build Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: server
+        run: npx tsc
+
+      - name: Create release archive
+        run: |
+          mkdir -p release/server
+          cp -r server/dist release/server/
+          cp -r server/public release/server/
+          cp -r server/config release/server/
+          cp -r server/templates release/server/
+          cp server/package.json server/package-lock.json release/server/
+          cp -r server/docker release/server/
+          cp -r server/installer release/server/
+          cp README.md release/
+          cp QUICKSTART.md release/ 2>/dev/null || true
+          cp MANUAL.md release/ 2>/dev/null || true
+          cd release && tar -czf ../swimex-edge-server-${{ inputs.release_tag }}.tar.gz .
+          cd .. && zip -r swimex-edge-server-${{ inputs.release_tag }}.zip release/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-build
+          path: |
+            swimex-edge-server-${{ inputs.release_tag }}.tar.gz
+            swimex-edge-server-${{ inputs.release_tag }}.zip
+          retention-days: 30
+
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    if: ${{ inputs.build_docker }}
+    needs: build-server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: ${{ inputs.docker_registry == 'ghcr.io' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: ${{ inputs.docker_registry == 'docker.io' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ inputs.release_tag }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: ${{ inputs.create_release }}
+    needs: [build-server]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: SwimEx EDGE ${{ inputs.release_tag }}
+          draft: false
+          prerelease: ${{ contains(inputs.release_tag, 'rc') || contains(inputs.release_tag, 'beta') || contains(inputs.release_tag, 'alpha') }}
+          generate_release_notes: true
+          files: |
+            swimex-edge-server-${{ inputs.release_tag }}.tar.gz
+            swimex-edge-server-${{ inputs.release_tag }}.zip
+          body: |
+            ## SwimEx EDGE Server ${{ inputs.release_tag }}
+
+            ### Deployment
+
+            **Docker:**
+            ```bash
+            docker pull ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
+            ```
+
+            **Manual:**
+            1. Download the release archive
+            2. Extract and run `server/installer/linux/install.sh`
+            3. Or use Docker Compose: `cd server/docker && docker-compose up -d`
+
+            ### Configuration
+            - Export server config from Admin Panel → Settings → Export Config
+            - Import config on new deployments for quick setup

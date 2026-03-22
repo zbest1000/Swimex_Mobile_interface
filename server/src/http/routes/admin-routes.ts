@@ -1,16 +1,22 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { authenticate, requireAdmin, requireSuperAdmin, requireRole } from '../../auth/middleware';
 import * as deviceService from '../../admin/device-service';
 import * as commConfigService from '../../admin/comm-config-service';
 import * as tagMappingService from '../../admin/tag-mapping-service';
 import * as featureFlagService from '../../admin/feature-flag-service';
 import * as layoutService from '../../admin/layout-service';
+import * as wifiService from '../../admin/wifi-service';
+import * as configService from '../../admin/config-service';
+import * as brandingService from '../../admin/branding-service';
 import { getAuditLogs } from '../../auth/audit';
 import { UserRole, Protocol } from '../../shared/models';
 import { wsHandler } from '../../websocket/ws-handler';
 import { mqttBroker } from '../../mqtt/mqtt-broker';
 import { modbusServer } from '../../modbus/modbus-server';
 import { modbusClient } from '../../modbus/modbus-client';
+
+const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -180,6 +186,136 @@ router.delete('/layouts/:id', authenticate, requireAdmin, (req: Request, res: Re
     layoutService.deleteLayout(req.params.id, req.user!.userId);
     res.json({ success: true });
   } catch (err) { next(err); }
+});
+
+// --- Device bulk import/export ---
+router.get('/devices/export', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  const devices = deviceService.listDevices();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="devices-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({ success: true, data: devices });
+});
+
+router.post('/devices/import', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { devices } = req.body;
+    if (!Array.isArray(devices)) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'devices must be an array' } });
+    }
+    const results = { imported: 0, skipped: 0, errors: [] as string[] };
+    for (const d of devices) {
+      try {
+        deviceService.registerDevice(d.macAddress, d.deviceName ?? 'Imported Device', d.deviceType ?? 'TABLET', req.user!.userId);
+        results.imported++;
+      } catch (err: any) {
+        results.errors.push(`${d.macAddress}: ${err.message}`);
+        results.skipped++;
+      }
+    }
+    res.json({ success: true, data: results });
+  } catch (err) { next(err); }
+});
+
+// --- WiFi AP Management ---
+router.get('/wifi', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      config: wifiService.getWifiConfig(),
+      status: wifiService.getWifiStatus(),
+    },
+  });
+});
+
+router.put('/wifi', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const cfg = wifiService.updateWifiConfig(req.body, req.user!.userId);
+    res.json({ success: true, data: cfg });
+  } catch (err) { next(err); }
+});
+
+router.post('/wifi/start', authenticate, requireAdmin, (req: Request, res: Response) => {
+  const result = wifiService.applyWifiConfig(req.user!.userId);
+  res.json({ success: result.success, data: { message: result.message } });
+});
+
+router.post('/wifi/stop', authenticate, requireAdmin, (req: Request, res: Response) => {
+  const result = wifiService.stopWifiAp(req.user!.userId);
+  res.json({ success: result.success, data: { message: result.message } });
+});
+
+// --- Server Configuration Export/Import ---
+router.get('/config/export', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  const data = configService.exportConfig();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="edge-config-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({ success: true, data });
+});
+
+router.post('/config/import', authenticate, requireSuperAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { config: configData, overwrite, sections } = req.body;
+    if (!configData) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'config data is required' } });
+    }
+    const result = configService.importConfig(configData, req.user!.userId, { overwrite, sections });
+    res.json({ success: true, data: result });
+  } catch (err) { next(err); }
+});
+
+// --- Branding / Business Customization ---
+router.get('/branding', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  res.json({ success: true, data: brandingService.getBranding() });
+});
+
+router.put('/branding', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const branding = brandingService.updateBranding(req.body, req.user!.userId);
+    res.json({ success: true, data: branding });
+  } catch (err) { next(err); }
+});
+
+// --- Logo Management ---
+router.get('/logos', authenticate, requireAdmin, (_req: Request, res: Response) => {
+  res.json({ success: true, data: brandingService.listLogos() });
+});
+
+router.get('/logos/:type', (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const type = _req.params.type as 'primary' | 'secondary' | 'favicon' | 'splash';
+    const { data, mimeType } = brandingService.getLogo(type);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(data);
+  } catch (err) { next(err); }
+});
+
+router.post('/logos/:type', authenticate, requireAdmin, logoUpload.single('file'), (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'File is required' } });
+    }
+    const type = req.params.type as 'primary' | 'secondary' | 'favicon' | 'splash';
+    const validTypes = ['primary', 'secondary', 'favicon', 'splash'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: `Type must be one of: ${validTypes.join(', ')}` } });
+    }
+    const logo = brandingService.uploadLogo(type, req.file.buffer, req.file.mimetype, req.user!.userId);
+    res.status(201).json({ success: true, data: logo });
+  } catch (err) { next(err); }
+});
+
+router.delete('/logos/:type', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const type = req.params.type as 'primary' | 'secondary' | 'favicon' | 'splash';
+    brandingService.deleteLogo(type, req.user!.userId);
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// --- Public branding endpoint (no auth required for client display) ---
+router.get('/public/branding', (_req: Request, res: Response) => {
+  res.json({ success: true, data: brandingService.getBranding() });
 });
 
 // --- Audit log ---
