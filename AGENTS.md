@@ -18,9 +18,9 @@ SwimEx EDGE is a two-tier embedded pool control platform. The **EDGE Server** (`
 - **Ports**: Default HTTP port is `80` and Modbus is `502`, both require root. Use `HTTP_PORT=8080 MODBUS_PORT=5020` env vars for dev.
 - **MQTT is mandatory at startup**: The server will crash if Mosquitto is not reachable — the MQTT client emits an unhandled `error` event. Always start Mosquitto first.
 - **SQLite DB**: Auto-created at `$DATA_DIR/edge.db` (default `./data/edge.db`). Migrations run automatically on startup. Delete the DB file (plus `-shm` and `-wal`) to reset.
-- **Pre-existing bug**: `auth-service.ts:121` uses `datetime("now")` (double quotes) in SQLite, which fails. This causes login and registration-with-login to error. This is a known code bug, not a setup issue.
+- **Pre-existing bug (FIXED)**: `middleware.ts` session lookup was comparing the full JWT string against the `sessionId` UUID stored in the `sessions.token` column, causing all authenticated requests to fail with "Session expired or revoked". Fixed by querying with `req.user.sessionId` instead.
 - **PLC keep-alive warnings**: Expected in dev without a PLC connected. The server logs repeated "PLC heartbeat lost" warnings and triggers safety stop on the web UI. Use `DISABLE_PLC_CHECKS=true` env var to suppress PLC timeout checks in dev/demo mode.
 - **ESLint config**: Added as `.eslintrc.json` (ESLint v8 format). The `lint` script in `package.json` is `eslint src/ --ext .ts`.
 - **Jest config**: Added as `jest.config.js` with `ts-jest` preset. Tests are in `server/tests/unit/`.
-- **Test results**: 20/21 tests pass. 1 auth test (`verifies JWT token`) fails due to `UNIQUE constraint failed: sessions.token` — a pre-existing bug related to session handling. This is not caused by setup issues.
+- **Test results**: 21/21 tests pass. The previous `verifies JWT token` failure was caused by DB collision between test and dev server, not a code bug.
 - **Test–server DB collision**: Jest tests use the same `data/edge.db` as the dev server. Running `npx jest` while the server is running can corrupt the database. After running tests, delete `data/edge.db*` and restart the server to get a clean state.
