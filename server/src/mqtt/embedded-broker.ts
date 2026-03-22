@@ -59,7 +59,7 @@ export class EmbeddedMqttBroker {
       concurrency: 200,
     };
 
-    this.aedes = new Aedes(opts);
+    this.aedes = await Aedes.createBroker(opts);
 
     if (this.brokerConfig.authenticate && this.brokerConfig.credentials?.length) {
       this.setupAuthentication();
