@@ -377,6 +377,24 @@ export function runMigrations(): void {
     log.info('Seeded built-in English language pack');
   }
 
+  // Pre-install all bundled language packs (offline embedded system — no internet)
+  try {
+    const { availablePacks } = require('../admin/i18n-packs');
+    const packInsert = db.prepare(`
+      INSERT OR IGNORE INTO language_packs (locale, display_name, native_name, is_built_in, is_installed, translations)
+      VALUES (?, ?, ?, 0, 1, ?)
+    `);
+    for (const pack of availablePacks) {
+      const exists = db.prepare('SELECT locale FROM language_packs WHERE locale = ?').get(pack.locale);
+      if (!exists) {
+        packInsert.run(pack.locale, pack.displayName, pack.nativeName, JSON.stringify(pack.translations));
+        log.info(`Pre-installed language pack: ${pack.locale} (${pack.displayName})`);
+      }
+    }
+  } catch (err: any) {
+    log.warn(`Could not pre-install language packs: ${err.message}`);
+  }
+
   // Seed default i18n system config
   const defaultLocale = db.prepare("SELECT key FROM system_config WHERE key = 'default_locale'").get();
   if (!defaultLocale) {
