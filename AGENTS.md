@@ -4,22 +4,14 @@
 
 ### Overview
 
+See `.cursor/skills/cloud-agent-starter.md` for comprehensive setup, API testing, commissioning flow, and environment variable reference.
+
 SwimEx EDGE is a two-tier embedded pool control platform. The **EDGE Server** (`server/`) is the primary development target — a Node.js/TypeScript application using Express, SQLite (better-sqlite3), MQTT, Modbus TCP, and WebSocket. The **EDGE Client** (`client/`) is an Android kiosk app (Kotlin/Gradle) and is optional for server development.
 
 ### Prerequisites
 
 - **Node.js >= 18** (project uses CommonJS modules, TypeScript ES2022 target)
-- **Mosquitto MQTT broker** must be running on `localhost:1883` before starting the server. Without it, the server crashes (unhandled MQTT `error` event on connection failure). Install via `apt-get install mosquitto` and start with `mosquitto -d -p 1883`.
-
-### Key commands (all run from `server/`)
-
-| Task | Command |
-|------|---------|
-| Install deps | `npm install` |
-| Lint | `npx eslint src/ --ext .ts` |
-| Build | `npm run build` (TypeScript compilation) |
-| Dev server | `HTTP_PORT=8080 MODBUS_PORT=5020 npm run dev` |
-| Tests | `npx jest --verbose` |
+- **Mosquitto MQTT broker** should be running on `localhost:1883` for full MQTT functionality. Install via `apt-get install mosquitto` and start with `mosquitto -d -p 1883`. The server will retry in the background if Mosquitto is unavailable, but some earlier code versions may crash without it.
 
 ### Non-obvious caveats
 
