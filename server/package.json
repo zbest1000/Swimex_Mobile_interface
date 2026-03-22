@@ -9,9 +9,12 @@
     "dev": "ts-node src/app/index.ts",
     "migrate": "ts-node src/database/migrate.ts",
     "lint": "eslint src/ --ext .ts",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:integration": "ts-node tests/integration/broker-modbus-simulator.test.ts",
+    "dev:sim": "SIMULATOR_MODE=true HTTP_PORT=8080 MODBUS_PORT=5020 MQTT_PORT=1883 LOG_LEVEL=debug ts-node src/app/index.ts"
   },
   "dependencies": {
+    "aedes": "^1.0.1",
     "argon2": "^0.44.0",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",

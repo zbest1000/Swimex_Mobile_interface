@@ -4,6 +4,7 @@ import { config } from '../utils/config';
 import { createLogger } from '../utils/logger';
 import { tagDatabase } from '../tags/tag-database';
 import { DEFAULT_TOPICS } from '../shared/protocols';
+import { embeddedBroker } from './embedded-broker';
 
 const log = createLogger('mqtt');
 
@@ -18,6 +19,7 @@ export interface MqttBrokerConfig {
   useTls: boolean;
   topicPrefix: string;
   qos: 0 | 1 | 2;
+  useEmbeddedBroker: boolean;
 }
 
 const DEFAULT_MQTT_CONFIG: MqttBrokerConfig = {
@@ -31,6 +33,7 @@ const DEFAULT_MQTT_CONFIG: MqttBrokerConfig = {
   useTls: false,
   topicPrefix: `swimex/${process.env.POOL_ID ?? 'default'}`,
   qos: 1,
+  useEmbeddedBroker: (process.env.MQTT_EXTERNAL ?? 'false') !== 'true',
 };
 
 /**
@@ -59,6 +62,14 @@ export class MqttService extends EventEmitter {
   async start(): Promise<void> {
     if (this.client) return;
 
+    if (this.mqttConfig.useEmbeddedBroker && !embeddedBroker.isRunning()) {
+      log.info('Starting embedded MQTT broker (Aedes)...');
+      await embeddedBroker.start();
+      this.mqttConfig.host = 'localhost';
+      this.mqttConfig.port = embeddedBroker.getPort();
+      log.info(`Embedded broker ready on port ${this.mqttConfig.port}`);
+    }
+
     const protocol = this.mqttConfig.useTls ? 'mqtts' : 'mqtt';
     const url = `${protocol}://${this.mqttConfig.host}:${this.mqttConfig.port}`;
 
@@ -77,12 +88,13 @@ export class MqttService extends EventEmitter {
       },
     };
 
-    log.info(`Connecting to Mosquitto broker at ${url} as "${this.mqttConfig.clientId}"...`);
+    const brokerType = this.mqttConfig.useEmbeddedBroker ? 'embedded Aedes' : 'external';
+    log.info(`Connecting to ${brokerType} broker at ${url} as "${this.mqttConfig.clientId}"...`);
     this.client = mqtt.connect(url, opts);
 
     this.client.on('connect', () => {
       this.connected = true;
-      log.info(`Connected to Mosquitto broker at ${url}`);
+      log.info(`Connected to MQTT broker at ${url}`);
 
       this.publishRetained(`${this.mqttConfig.topicPrefix}/status/server_online`, { online: true, timestamp: Date.now() });
 
@@ -96,14 +108,14 @@ export class MqttService extends EventEmitter {
     });
 
     this.client.on('reconnect', () => {
-      log.info('Reconnecting to Mosquitto broker...');
+      log.info('Reconnecting to MQTT broker...');
       this.emit('reconnecting');
     });
 
     this.client.on('disconnect', () => {
       this.connected = false;
       this.stopKeepAlive();
-      log.warn('Disconnected from Mosquitto broker');
+      log.warn('Disconnected from MQTT broker');
       this.emit('disconnected');
     });
 
@@ -311,7 +323,7 @@ export class MqttService extends EventEmitter {
     if (this.client) {
       this.publishRetained(`${this.mqttConfig.topicPrefix}/status/server_online`, { online: false, timestamp: Date.now() });
 
-      return new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         this.client!.end(false, {}, () => {
           this.client = null;
           this.connected = false;
@@ -320,6 +332,14 @@ export class MqttService extends EventEmitter {
         });
       });
     }
+
+    if (this.mqttConfig.useEmbeddedBroker && embeddedBroker.isRunning()) {
+      await embeddedBroker.stop();
+    }
+  }
+
+  getEmbeddedBrokerStats() {
+    return embeddedBroker.isRunning() ? embeddedBroker.getStats() : null;
   }
 }
 

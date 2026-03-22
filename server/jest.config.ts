@@ -4,7 +4,8 @@ const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
-  testMatch: ['**/*.test.ts'],
+  testMatch: ['**/unit/**/*.test.ts'],
+  testPathIgnorePatterns: ['/node_modules/', '/tests/integration/'],
   moduleNameMapper: {
     '^@app/(.*)$': '<rootDir>/src/app/$1',
     '^@auth/(.*)$': '<rootDir>/src/auth/$1',
@@ -36,7 +37,19 @@ const config: Config = {
         moduleResolution: 'node',
       },
     }],
+    '^.+\\.js$': ['ts-jest', {
+      useESM: false,
+      tsconfig: {
+        allowJs: true,
+        module: 'commonjs',
+        target: 'ES2022',
+        esModuleInterop: true,
+      },
+    }],
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(aedes|mqemitter|mqtt-packet|readable-stream|hyperid)/)',
+  ],
 };
 
 export default config;
