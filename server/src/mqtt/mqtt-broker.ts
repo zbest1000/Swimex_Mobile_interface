@@ -291,6 +291,10 @@ export class MqttService extends EventEmitter {
   }
 
   private checkKeepAliveTimeout(): void {
+    if (config.disablePlcChecks) {
+      return; // Skip PLC timeout check in demo mode
+    }
+    
     const elapsed = Date.now() - this.lastKeepAliveResponse;
     const threshold = config.heartbeatIntervalMs * config.heartbeatMissedThreshold;
 

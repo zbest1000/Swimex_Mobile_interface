@@ -18,6 +18,7 @@ export interface ServerConfig {
   logLevel: string;
   simulatorMode: boolean;
   useEmbeddedBroker: boolean;
+  disablePlcChecks: boolean;
 }
 
 function env(key: string, fallback: string): string {
@@ -43,6 +44,7 @@ export function loadConfig(): ServerConfig {
     logLevel: env('LOG_LEVEL', 'info'),
     simulatorMode: env('SIMULATOR_MODE', 'false') === 'true' || env('SIMULATOR_MODE', '0') === '1',
     useEmbeddedBroker: env('MQTT_EXTERNAL', 'false') !== 'true',
+    disablePlcChecks: env('DISABLE_PLC_CHECKS', 'false') === 'true',
   };
 }
 
