@@ -16,6 +16,8 @@ export interface ServerConfig {
   defaultAdminPass: string;
   poolId: string;
   logLevel: string;
+  simulatorMode: boolean;
+  useEmbeddedBroker: boolean;
 }
 
 function env(key: string, fallback: string): string {
@@ -39,6 +41,8 @@ export function loadConfig(): ServerConfig {
     defaultAdminPass: env('ADMIN_PASS', 'changeme'),
     poolId: env('POOL_ID', 'default'),
     logLevel: env('LOG_LEVEL', 'info'),
+    simulatorMode: env('SIMULATOR_MODE', 'false') === 'true' || env('SIMULATOR_MODE', '0') === '1',
+    useEmbeddedBroker: env('MQTT_EXTERNAL', 'false') !== 'true',
   };
 }
 

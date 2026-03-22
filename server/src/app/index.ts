@@ -6,6 +6,7 @@ import { runMigrations } from '../database/migrate';
 import { createApp } from '../http/server';
 import { wsHandler } from '../websocket/ws-handler';
 import { mqttBroker } from '../mqtt/mqtt-broker';
+import { embeddedBroker } from '../mqtt/embedded-broker';
 import { modbusServer } from '../modbus/modbus-server';
 import { modbusClient, ModbusClientConfig } from '../modbus/modbus-client';
 import { dataBridge } from '../communication/data-bridge';
@@ -13,6 +14,7 @@ import { workoutEngine } from '../workouts/workout-engine';
 import { tagDatabase } from '../tags/tag-database';
 import { DataType, ByteOrder } from '../shared/models';
 import { seedDefaults } from '../database/seed';
+import { PlcSimulator } from '../simulator/plc-simulator';
 
 const log = createLogger('app');
 
@@ -52,35 +54,46 @@ async function main(): Promise<void> {
     });
   });
 
-  // 5. Connect to communication services in background (non-blocking)
-  log.info('[5/6] Connecting to communication services (background)...');
+  // 5. Connect to communication services
+  log.info('[5/7] Starting communication services...');
 
-  // MQTT — connect to Eclipse Mosquitto (retries automatically)
-  mqttBroker.start().then(() => {
-    log.info('MQTT broker connected');
-  }).catch((err: any) => {
+  // MQTT — start embedded Aedes broker + connect client (or connect to external)
+  await mqttBroker.start().catch((err: any) => {
     log.warn(`MQTT connection pending (will keep retrying): ${err.message ?? 'connection refused'}`);
   });
+  log.info(`MQTT: ${mqttBroker.isConnected() ? 'Connected' : 'Connecting in background...'} (embedded: ${embeddedBroker.isRunning()})`);
 
   // Modbus TCP server — expose registers to external systems
-  modbusServer.start().then(() => {
-    log.info('Modbus TCP server started');
-  }).catch((err: any) => {
+  await modbusServer.start().catch((err: any) => {
     log.warn(`Modbus TCP server deferred: ${err.message}`);
   });
 
   // Modbus TCP client — connect to PLC (if configured)
   configureModbusClient();
 
-  // 6. Done
-  log.info('[6/6] Startup complete');
+  // 6. Start simulator if enabled
+  const simulatorEnabled = process.env.SIMULATOR_MODE === 'true' || process.env.SIMULATOR_MODE === '1';
+  let simulator: PlcSimulator | null = null;
+  if (simulatorEnabled) {
+    log.info('[6/7] Starting PLC simulator...');
+    simulator = new PlcSimulator();
+    await simulator.start();
+    log.info('PLC simulator running — generating test data');
+  } else {
+    log.info('[6/7] PLC simulator disabled (set SIMULATOR_MODE=true to enable)');
+  }
+
+  // 7. Done
+  log.info('[7/7] Startup complete');
   log.info('========================================');
   log.info(' SwimEx EDGE Server — Ready');
-  log.info(`   Web UI:   http://0.0.0.0:${config.httpPort}`);
-  log.info(`   WebSocket ws://0.0.0.0:${config.httpPort}/ws`);
-  log.info(`   MQTT:     ${mqttBroker.isConnected() ? 'Connected' : 'Connecting in background...'}`);
-  log.info(`   Modbus:   tcp://0.0.0.0:${config.modbusPort}`);
-  log.info(`   Pool ID:  ${config.poolId}`);
+  log.info(`   Web UI:      http://0.0.0.0:${config.httpPort}`);
+  log.info(`   WebSocket    ws://0.0.0.0:${config.httpPort}/ws`);
+  log.info(`   MQTT Broker: ${embeddedBroker.isRunning() ? 'Embedded (Aedes)' : 'External'} on port ${config.mqttPort}`);
+  log.info(`   MQTT Client: ${mqttBroker.isConnected() ? 'Connected' : 'Connecting...'}`);
+  log.info(`   Modbus TCP:  tcp://0.0.0.0:${config.modbusPort}`);
+  log.info(`   Simulator:   ${simulatorEnabled ? 'ACTIVE' : 'off'}`);
+  log.info(`   Pool ID:     ${config.poolId}`);
   log.info('========================================');
 
   // Safety stop: detect PLC heartbeat loss
@@ -91,6 +104,7 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`Received ${signal} — shutting down...`);
+    if (simulator) await simulator.stop();
     wsHandler.stop();
     await mqttBroker.stop();
     await modbusServer.stop();
