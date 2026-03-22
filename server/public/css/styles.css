@@ -1160,31 +1160,28 @@ button, input, select, textarea {
 
 .gauge-container {
   width: 100%;
-  max-width: 300px;
+  max-width: 280px;
 }
 
 .speed-gauge {
   width: 100%;
   height: auto;
+  overflow: visible;
 }
 
 .gauge-value {
-  font-size: 52px;
+  font-size: 48px;
   font-weight: 800;
   fill: var(--color-text);
   font-family: var(--font-family);
+  font-variant-numeric: tabular-nums;
 }
 
 .gauge-unit {
-  font-size: 16px;
+  font-size: 14px;
   fill: var(--color-text-muted);
   font-family: var(--font-family);
-}
-
-.gauge-label {
-  font-size: 13px;
-  fill: var(--color-text-muted);
-  font-family: var(--font-family);
+  letter-spacing: 0.05em;
 }
 
 .execution-timer {

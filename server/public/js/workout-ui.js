@@ -32,78 +32,84 @@ const WorkoutUI = (function () {
     speed = clamp(speed || 0, 0, maxSpeed);
     var pct = speed / maxSpeed;
 
-    var cx = 150, cy = 130, r = 100;
-    var startAngle = 225, endAngle = -45;
-    var totalArc = 270;
-    var sweepAngle = pct * totalArc;
+    // Gauge geometry: 240° arc, gap at bottom
+    var size = 220;
+    var cx = size / 2, cy = size / 2;
+    var r = 90;
+    var trackWidth = 16;
+    var arcDeg = 240;
+    var startDeg = 150; // 7 o'clock position
 
-    function polarToXY(angleDeg) {
-      var rad = (angleDeg * Math.PI) / 180;
-      return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+    function degToRad(d) { return d * Math.PI / 180; }
+    function pol(deg, radius) {
+      var rad = degToRad(deg);
+      return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
     }
 
-    function polarToXYR(angleDeg, radius) {
-      var rad = (angleDeg * Math.PI) / 180;
-      return { x: cx + radius * Math.cos(rad), y: cy - radius * Math.sin(rad) };
+    // Arc path (clockwise from startDeg for arcDeg degrees)
+    function arcPath(radius, sDeg, eDeg) {
+      var s = pol(sDeg, radius);
+      var e = pol(eDeg, radius);
+      var large = (eDeg - sDeg) > 180 ? 1 : 0;
+      return 'M ' + s.x + ' ' + s.y + ' A ' + radius + ' ' + radius + ' 0 ' + large + ' 1 ' + e.x + ' ' + e.y;
     }
 
-    var bgStart = polarToXY(startAngle);
-    var bgEnd = polarToXY(endAngle);
-    var valEnd = polarToXY(startAngle - sweepAngle);
-    var largeArc = totalArc > 180 ? 1 : 0;
-    var valLargeArc = sweepAngle > 180 ? 1 : 0;
+    var endDeg = startDeg + arcDeg;
+    var valDeg = startDeg + pct * arcDeg;
 
+    // Color based on speed
+    var valColor;
+    if (pct < 0.4) valColor = '#2ECC71';
+    else if (pct < 0.7) valColor = '#00D9FF';
+    else if (pct < 0.85) valColor = '#F39C12';
+    else valColor = '#E74C3C';
+
+    // Tick marks + labels
     var ticks = '';
     for (var i = 0; i <= 10; i++) {
-      var tickPct = i / 10;
-      var tickAngle = startAngle - tickPct * totalArc;
-      var outer = polarToXYR(tickAngle, r + 4);
-      var inner = polarToXYR(tickAngle, r - (i % 5 === 0 ? 12 : 6));
-      ticks += '<line x1="' + outer.x + '" y1="' + outer.y +
-        '" x2="' + inner.x + '" y2="' + inner.y +
-        '" stroke="var(--color-text-muted)" stroke-width="' + (i % 5 === 0 ? 2 : 1) +
-        '" stroke-linecap="round"/>';
+      var tDeg = startDeg + (i / 10) * arcDeg;
+      var oP = pol(tDeg, r + trackWidth / 2 + 2);
+      var iP = pol(tDeg, r + trackWidth / 2 + (i % 5 === 0 ? 12 : 7));
+      ticks += '<line x1="' + oP.x + '" y1="' + oP.y + '" x2="' + iP.x + '" y2="' + iP.y +
+        '" stroke="' + (i % 5 === 0 ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)') +
+        '" stroke-width="' + (i % 5 === 0 ? 1.5 : 1) + '" stroke-linecap="round"/>';
       if (i % 5 === 0) {
-        var labelPos = polarToXYR(tickAngle, r - 22);
-        ticks += '<text x="' + labelPos.x + '" y="' + labelPos.y +
-          '" text-anchor="middle" dominant-baseline="central" class="gauge-label">' +
-          Math.round(tickPct * maxSpeed) + '</text>';
+        var lP = pol(tDeg, r + trackWidth / 2 + 22);
+        ticks += '<text x="' + lP.x + '" y="' + lP.y +
+          '" text-anchor="middle" dominant-baseline="central"' +
+          ' fill="rgba(255,255,255,0.6)" font-size="11" font-weight="500">' +
+          Math.round((i / 10) * maxSpeed) + '</text>';
       }
     }
 
-    var needleAngle = startAngle - sweepAngle;
-    var needleTip = polarToXYR(needleAngle, r - 14);
-    var needleBase1 = polarToXYR(needleAngle + 90, 6);
-    var needleBase2 = polarToXYR(needleAngle - 90, 6);
-
-    var color;
-    if (pct < 0.33) color = 'var(--color-success)';
-    else if (pct < 0.66) color = 'var(--color-accent)';
-    else if (pct < 0.85) color = 'var(--color-warning)';
-    else color = 'var(--color-danger)';
-
-    var textY = cy + r + 30;
+    // Needle
+    var needleDeg = startDeg + pct * arcDeg;
+    var tip = pol(needleDeg, r - 6);
+    var b1 = pol(needleDeg - 90, 4);
+    var b2 = pol(needleDeg + 90, 4);
+    var tail = pol(needleDeg + 180, 16);
 
     container.innerHTML =
-      '<svg class="speed-gauge" viewBox="0 0 300 ' + (textY + 30) + '" xmlns="http://www.w3.org/2000/svg">' +
-        '<defs>' +
-          '<linearGradient id="gaugeArc" x1="0%" y1="0%" x2="100%" y2="0%">' +
-            '<stop offset="0%" style="stop-color:var(--color-success)"/>' +
-            '<stop offset="50%" style="stop-color:var(--color-accent)"/>' +
-            '<stop offset="100%" style="stop-color:var(--color-danger)"/>' +
-          '</linearGradient>' +
-        '</defs>' +
-        '<path d="M ' + bgStart.x + ' ' + bgStart.y + ' A ' + r + ' ' + r + ' 0 ' + largeArc + ' 0 ' + bgEnd.x + ' ' + bgEnd.y + '"' +
-          ' fill="none" stroke="var(--color-surface)" stroke-width="12" stroke-linecap="round"/>' +
-        '<path d="M ' + bgStart.x + ' ' + bgStart.y + ' A ' + r + ' ' + r + ' 0 ' + valLargeArc + ' 0 ' + valEnd.x + ' ' + valEnd.y + '"' +
-          ' fill="none" stroke="url(#gaugeArc)" stroke-width="12" stroke-linecap="round" class="gauge-fill"/>' +
+      '<svg class="speed-gauge" viewBox="0 0 ' + size + ' ' + (size + 50) + '" xmlns="http://www.w3.org/2000/svg">' +
+        // Background track
+        '<path d="' + arcPath(r, startDeg, endDeg) + '"' +
+          ' fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="' + trackWidth + '" stroke-linecap="round"/>' +
+        // Value arc
+        (pct > 0.005 ?
+        '<path d="' + arcPath(r, startDeg, valDeg) + '"' +
+          ' fill="none" stroke="' + valColor + '" stroke-width="' + trackWidth + '" stroke-linecap="round"' +
+          ' style="filter:drop-shadow(0 0 6px ' + valColor + ')"/>' : '') +
+        // Ticks + labels
         ticks +
-        '<polygon points="' + needleTip.x + ',' + needleTip.y + ' ' + needleBase1.x + ',' + needleBase1.y + ' ' + needleBase2.x + ',' + needleBase2.y + '"' +
-          ' fill="' + color + '" class="gauge-needle"/>' +
-        '<circle cx="' + cx + '" cy="' + cy + '" r="7" fill="var(--color-bg-elevated)"/>' +
-        '<circle cx="' + cx + '" cy="' + cy + '" r="3" fill="' + color + '"/>' +
-        '<text x="' + cx + '" y="' + textY + '" text-anchor="middle" class="gauge-value">' + Math.round(speed) + '</text>' +
-        '<text x="' + cx + '" y="' + (textY + 22) + '" text-anchor="middle" class="gauge-unit">% speed</text>' +
+        // Needle
+        '<polygon points="' + tip.x + ',' + tip.y + ' ' + b1.x + ',' + b1.y + ' ' + tail.x + ',' + tail.y + ' ' + b2.x + ',' + b2.y + '"' +
+          ' fill="' + valColor + '" style="filter:drop-shadow(0 0 4px ' + valColor + ')"/>' +
+        // Center hub
+        '<circle cx="' + cx + '" cy="' + cy + '" r="10" fill="#1E3A52" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="4" fill="' + valColor + '"/>' +
+        // Speed value text (centered below gauge)
+        '<text x="' + cx + '" y="' + (size + 10) + '" text-anchor="middle" class="gauge-value">' + Math.round(speed) + '</text>' +
+        '<text x="' + cx + '" y="' + (size + 32) + '" text-anchor="middle" class="gauge-unit">% speed</text>' +
       '</svg>';
   }
 
