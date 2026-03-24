@@ -65,6 +65,7 @@ export class EmbeddedMqttBroker {
       this.setupAuthentication();
     }
 
+    this.setupAuthorization();
     this.setupEventHandlers();
 
     await this.startTcpServer();
@@ -101,6 +102,26 @@ export class EmbeddedMqttBroker {
         err.returnCode = 4;
         callback(err, false);
       }
+    };
+  }
+
+  private setupAuthorization(): void {
+    if (!this.aedes) return;
+    const poolId = process.env.POOL_ID ?? 'default';
+    const prefix = `swimex/${poolId}/`;
+
+    this.aedes.authorizePublish = (_client: Client | null, packet: any, callback: (error: Error | null) => void) => {
+      const topic: string = packet.topic ?? '';
+      if (topic.startsWith('$SYS/')) { callback(new Error('Cannot publish to $SYS')); return; }
+      if (!topic.startsWith(prefix)) { callback(new Error('Topic outside pool scope')); return; }
+      callback(null);
+    };
+
+    this.aedes.authorizeSubscribe = (_client: Client | null, sub: Subscription, callback: (error: Error | null, subscription: Subscription | null) => void) => {
+      const topic: string = sub.topic ?? '';
+      if (topic.startsWith('$SYS/')) { callback(null, sub); return; }
+      if (!topic.startsWith(prefix) && topic !== '#') { callback(new Error('Topic outside pool scope'), null); return; }
+      callback(null, sub);
     };
   }
 

@@ -55,13 +55,13 @@ export function generateToken(payload: TokenPayload): string {
   return jwt.sign(
     { userId: payload.userId, username: payload.username, role: payload.role, sessionId: payload.sessionId },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn as any },
+    { algorithm: 'HS256', expiresIn: config.jwtExpiresIn as any },
   );
 }
 
 export function verifyToken(token: string): TokenPayload {
   try {
-    return jwt.verify(token, config.jwtSecret) as TokenPayload;
+    return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as TokenPayload;
   } catch {
     throw new AuthError('Invalid or expired token');
   }
@@ -78,7 +78,7 @@ export async function createUser(
   const db = getDb();
 
   if (!username || username.length < 3) throw new ValidationError('Username must be at least 3 characters');
-  if (!password || password.length < 4) throw new ValidationError('Password must be at least 4 characters');
+  if (!password || password.length < 8) throw new ValidationError('Password must be at least 8 characters');
   if (!displayName) throw new ValidationError('Display name is required');
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
@@ -168,7 +168,7 @@ export async function updateUserRole(userId: string, newRole: UserRole, actorId:
 }
 
 export async function updatePassword(userId: string, newPassword: string, actorId?: string, currentPassword?: string): Promise<void> {
-  if (!newPassword || newPassword.length < 4) throw new ValidationError('Password must be at least 4 characters');
+  if (!newPassword || newPassword.length < 8) throw new ValidationError('Password must be at least 8 characters');
   const db = getDb();
 
   if (currentPassword !== undefined) {
@@ -180,12 +180,14 @@ export async function updatePassword(userId: string, newPassword: string, actorI
 
   const hash = await hashPassword(newPassword);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
   auditLog('PASSWORD_CHANGED', actorId ?? userId, 'user', userId, {});
 }
 
 export function disableUser(userId: string, actorId: string): void {
   const db = getDb();
   db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId);
+  db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
   auditLog('USER_DISABLED', actorId, 'user', userId, {});
 }
 

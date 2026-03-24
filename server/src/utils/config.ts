@@ -28,7 +28,12 @@ function env(key: string, fallback: string): string {
 
 function resolveJwtSecret(): string {
   const explicit = process.env.JWT_SECRET;
-  if (explicit) return explicit;
+  if (explicit) {
+    if (explicit.length < 32) {
+      console.warn('[SECURITY] JWT_SECRET is shorter than 32 characters. Use a stronger secret for production.');
+    }
+    return explicit;
+  }
   const generated = crypto.randomBytes(48).toString('base64url');
   console.warn(
     '[SECURITY] JWT_SECRET not set — using a random ephemeral secret. ' +

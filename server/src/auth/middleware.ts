@@ -49,7 +49,16 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     try {
-      req.user = verifyToken(token);
+      const payload = verifyToken(token);
+      if (payload.sessionId) {
+        const db = getDb();
+        const session = db.prepare(
+          "SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime('now')"
+        ).get(payload.sessionId);
+        if (session) {
+          req.user = payload;
+        }
+      }
     } catch {
       // Ignore invalid tokens for optional auth
     }

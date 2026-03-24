@@ -19,7 +19,7 @@ export function initDatabase(dataDir?: string): Database.Database {
   if (db) return db;
 
   const dir = dataDir ?? process.env.DATA_DIR ?? config.dataDir;
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const dbPath = path.join(dir, 'edge.db');
   log.info(`Opening database at ${dbPath}`);
 

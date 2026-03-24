@@ -15,10 +15,31 @@ const log = createLogger('http');
 export function createApp(): express.Application {
   const app = express();
 
-  // Middleware
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
+  app.disable('x-powered-by');
+
+  // CORS — restrict origins; set CORS_ORIGIN env to allow specific origins
+  const corsOrigin = process.env.CORS_ORIGIN;
+  app.use(cors({
+    origin: corsOrigin ? corsOrigin.split(',').map(s => s.trim()) : true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-MAC'],
+  }));
+  app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Security headers
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if (process.env.ENABLE_HSTS === 'true') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+  });
 
   // Request logging
   app.use((req: Request, _res: Response, next: NextFunction) => {
