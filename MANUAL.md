@@ -92,7 +92,7 @@ Every platform uses **one command**. The automated `setup.sh` (or `setup.bat` on
 | **Raspberry Pi** | `-rpi-arm.tar.gz` | `tar -xzf *.tar.gz && cd */ && sudo bash setup.sh --install` |
 | **Docker** | any release or repo | `bash setup.sh --docker` |
 
-After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). On first run, credentials are generated automatically and printed in the server log — **save them**. You can also set them via environment variables (`ADMIN_USER`, `ADMIN_PASS`, `SUPERADMIN_PASS`) before running setup.
+After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). Default login: **admin** / **admin123**. Passwords are stored as Argon2id hashes — plaintext is never saved to disk.
 
 ---
 
@@ -170,8 +170,8 @@ The image is multi-arch (amd64 + arm64). Environment variables:
 | `MQTT_PORT` | `1883` | MQTT broker port |
 | `MODBUS_PORT` | `502` | Modbus TCP port |
 | `ADMIN_USER` | `admin` | Initial admin username (first run only) |
-| `ADMIN_PASS` | *(generated)* | Initial admin password (first run only) |
-| `SUPERADMIN_PASS` | *(generated)* | Initial superadmin password (first run only) |
+| `ADMIN_PASS` | `admin123` | Override default admin password (first run only) |
+| `SUPERADMIN_PASS` | `superadmin` | Override default superadmin password (first run only) |
 | `MQTT_USER` | `edge-server` | MQTT broker username |
 | `MQTT_PASS` | *(empty)* | MQTT broker password |
 | `JWT_SECRET` | *(random)* | JWT signing secret — set for persistent sessions |
@@ -179,7 +179,7 @@ The image is multi-arch (amd64 + arm64). Environment variables:
 | `DATA_DIR` | `/data` | Persistent data volume |
 | `LOG_LEVEL` | `info` | Log verbosity |
 
-> **Important:** If `ADMIN_PASS` and `SUPERADMIN_PASS` are not set, random passwords are generated on first run and printed in the server log. Set them explicitly for production deployments.
+All passwords are hashed with Argon2id before storage. Override defaults with `ADMIN_PASS` / `SUPERADMIN_PASS` env vars on first run.
 
 ---
 
@@ -302,40 +302,31 @@ The RPi installer (`sudo bash setup.sh --install`) uses the same systemd service
 
 ## 4. First-Time Setup
 
-On first run, the server creates two accounts automatically:
+On first run, the server creates three default accounts. Passwords are hashed with **Argon2id** before storage — plaintext is never written to the database, logs, or filesystem.
 
-| Who | Username | Password |
-|-----|----------|----------|
-| Super Administrator | `superadmin` | Set via `SUPERADMIN_PASS` env var, or generated and printed in server log |
-| Administrator | `admin` (or `ADMIN_USER`) | Set via `ADMIN_PASS` env var, or generated and printed in server log |
+| Who | Username | Default Password | Role |
+|-----|----------|-----------------|------|
+| Super Administrator | `superadmin` | `superadmin` | Full system access, hidden settings |
+| Administrator | `admin` | `admin123` | Manage users, devices, pool settings |
+| Demo Swimmer | `swimmer` | `swimmer1` | Run workouts, save programs |
 
-**How to find your generated credentials:**
-- **Credentials file:** `cat <data-dir>/.initial-credentials` (default: `data/.initial-credentials`)
-- **systemd service:** `sudo cat /var/lib/swimex-edge/.initial-credentials`
-- **Docker:** `docker exec swimex-edge cat /data/.initial-credentials`
+### Important: Change Default Passwords
 
-> **Delete the credentials file after saving the passwords:** `rm <data-dir>/.initial-credentials`
-
-### Important: Change Your Passwords
-
-1. Log in with the credentials from the server log
+1. Log in as **admin** (password: `admin123`)
 2. Click your username in the top-right corner
 3. Go to **Profile** → **Change Password**
-4. Set a strong, new password
-5. Repeat for the **superadmin** account
+4. Set a strong, unique password (minimum 8 characters)
+5. Repeat for the **superadmin** and **swimmer** accounts
 
-### Setting Credentials Explicitly (Production)
+### Custom Passwords (Production)
 
-For production, set passwords before first run so they never appear in logs:
+Override the defaults via environment variables before first run:
 
 ```bash
-ADMIN_PASS=YourStrongPassword SUPERADMIN_PASS=AnotherStrongPassword bash setup.sh
+ADMIN_PASS=YourStrongPass SUPERADMIN_PASS=AnotherStrongPass bash setup.sh
 ```
 
-Or in Docker:
-```bash
-docker run -d -e ADMIN_PASS=YourStrongPassword -e SUPERADMIN_PASS=AnotherStrongPassword ...
-```
+These are only used during account creation on the very first startup. They are hashed immediately and never stored in plaintext.
 
 ---
 
@@ -858,7 +849,7 @@ Every push and pull request to `main` runs the CI workflow which:
 
 - Double-check your username and password (they're case-sensitive)
 - Ask an Administrator to check if your account is disabled
-- Check the credentials file: `cat data/.initial-credentials` (or `/var/lib/swimex-edge/.initial-credentials` for service installs)
+- Try the default accounts: `admin` / `admin123` or `superadmin` / `superadmin`
 
 ### "View only — cannot control pool"
 

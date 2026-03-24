@@ -455,4 +455,4 @@ jobs:
               ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
             ```
 
-            Credentials are generated on first run and printed in the server log. See [MANUAL.md](MANUAL.md) for details.
+            Default login: **admin** / **admin123**. Passwords stored as Argon2id hashes. See [MANUAL.md](MANUAL.md).

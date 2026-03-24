@@ -27,20 +27,17 @@ Open the URL shown in the terminal when setup completes.
 
 ---
 
-## First-Run Credentials
+## Default Login Accounts
 
-On first run, the server creates `superadmin` and `admin` accounts with **randomly generated passwords** printed in the server log.
+| Role | Username | Password |
+|------|----------|----------|
+| Super Admin | `superadmin` | `superadmin` |
+| Admin | `admin` | `admin123` |
+| Demo Swimmer | `swimmer` | `swimmer1` |
 
-To find them:
-- **File:** `cat data/.initial-credentials` (in the data directory)
-- **Service:** `sudo cat /var/lib/swimex-edge/.initial-credentials`
-- **Docker:** `docker exec swimex-edge cat /data/.initial-credentials`
+Passwords are stored as **Argon2id hashes** — plaintext is never saved to disk.
 
-Delete the file after saving: `rm data/.initial-credentials`
-
-To set passwords explicitly: `ADMIN_PASS=MyPass SUPERADMIN_PASS=MyPass2 bash setup.sh`
-
-> **Change passwords after first login via Profile → Change Password.**
+> **Change these passwords immediately after first login.**
 
 ---
 
