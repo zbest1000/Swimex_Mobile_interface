@@ -15,15 +15,13 @@ services:
     volumes:
       - edge-data:/data
       - edge-config:/config
+    env_file:
+      - .env
     environment:
       - HTTP_PORT=80
       - MODBUS_PORT=502
       - MQTT_PORT=1883
       - MQTT_WS_PORT=9001
-      - MQTT_USER=edge-server
-      - MQTT_PASS=edge-server-secret
-      - ADMIN_USER=admin
-      - ADMIN_PASS=changeme
       - POOL_ID=default
       - LOG_LEVEL=info
       - DATA_DIR=/data
@@ -56,10 +54,6 @@ services:
       - MODBUS_PORT=502
       - MQTT_PORT=1883
       - MQTT_WS_PORT=9001
-      - MQTT_USER=edge-server
-      - MQTT_PASS=edge-server-secret
-      - ADMIN_USER=admin
-      - ADMIN_PASS=changeme
       - POOL_ID=sim-pool
       - LOG_LEVEL=debug
       - DATA_DIR=/data

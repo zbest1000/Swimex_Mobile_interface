@@ -153,7 +153,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo " Manage:   sudo systemctl {start|stop|restart|status} ${SERVICE_NAME}"
     echo " Logs:     sudo journalctl -u ${SERVICE_NAME} -f"
     echo ""
-    echo " Default login: admin / admin123"
+    echo " Login:     Check 'journalctl -u ${SERVICE_NAME}' for generated credentials"
     echo "========================================"
 else
     echo ""

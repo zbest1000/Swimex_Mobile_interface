@@ -102,7 +102,7 @@ docker run -d \
   --name edge-server \
   -p 80:80 -p 1883:1883 -p 502:502 \
   -v edge-data:/data -v edge-config:/config \
-  -e ADMIN_USER=admin -e ADMIN_PASS=changeme \
+  -e ADMIN_PASS=YourSecurePassword \
   swimex/edge-server:latest
 ```
 

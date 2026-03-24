@@ -1,9 +1,14 @@
+import crypto from 'crypto';
 import { getDb } from './connection';
 import { createLogger } from '../utils/logger';
 import * as authService from '../auth/auth-service';
 import { UserRole } from '../shared/models';
 
 const log = createLogger('seed');
+
+function generateRandomPassword(): string {
+  return crypto.randomBytes(12).toString('base64url');
+}
 
 /**
  * Auto-seed on first run: creates the initial Super Admin account.
@@ -29,25 +34,34 @@ export async function seedDefaults(): Promise<void> {
     INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioning_step', '0', datetime('now'))
   `).run();
 
+  const superAdminPass = process.env.SUPERADMIN_PASS || generateRandomPassword();
+  const adminUser = process.env.ADMIN_USER || 'admin';
+  const adminPass = process.env.ADMIN_PASS || generateRandomPassword();
+
   try {
-    await authService.createUser('superadmin', 'superadmin', 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
+    await authService.createUser('superadmin', superAdminPass, 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
     log.info('Created initial Super Administrator account');
   } catch (err: any) {
     log.warn(`Super admin creation: ${err.message}`);
   }
 
   try {
-    await authService.createUser('admin', 'admin', 'Administrator', UserRole.ADMINISTRATOR);
+    await authService.createUser(adminUser, adminPass, 'Administrator', UserRole.ADMINISTRATOR);
     log.info('Created initial Administrator account');
   } catch (err: any) {
     log.warn(`Admin creation: ${err.message}`);
   }
 
-  log.info('========================================');
-  log.info(' Default accounts created.');
-  log.info(' CHANGE DEFAULT PASSWORDS IMMEDIATELY');
-  log.info(' via the commissioning wizard.');
-  log.info('========================================');
+  if (!process.env.ADMIN_PASS || !process.env.SUPERADMIN_PASS) {
+    log.info('========================================');
+    log.info(' Generated first-run credentials:');
+    if (!process.env.SUPERADMIN_PASS) log.info(`   superadmin password: ${superAdminPass}`);
+    if (!process.env.ADMIN_PASS) log.info(`   ${adminUser} password: ${adminPass}`);
+    log.info(' SAVE THESE and change them after login.');
+    log.info('========================================');
+  }
+
+  log.info('Default accounts created. Change passwords via the commissioning wizard.');
 }
 
 /**

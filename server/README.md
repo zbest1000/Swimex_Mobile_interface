@@ -30,7 +30,7 @@ Environment variables:
 | `DATA_DIR` | ./data | SQLite database location |
 | `CONFIG_DIR` | ./config | Configuration files |
 | `ADMIN_USER` | admin | Default admin username |
-| `ADMIN_PASS` | changeme | Default admin password |
+| `ADMIN_PASS` | *(generated)* | Admin password — set for production, auto-generated if empty |
 | `JWT_SECRET` | (dev default) | JWT signing secret |
 | `POOL_ID` | default | Pool identifier for MQTT topics |
 

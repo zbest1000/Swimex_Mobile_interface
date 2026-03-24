@@ -130,7 +130,7 @@ The easiest Windows option — no Node.js installation required:
 1. Download and extract `swimex-edge-server-<version>-windows-x64.zip`
 2. **Double-click `setup.bat`**
 
-The server starts automatically. Open `http://localhost` in a browser. Default login: `admin` / `admin123`.
+The server starts automatically. Open `http://localhost` in a browser. Credentials are generated on first run and shown in the server log.
 
 ### .msi Installer (Alternative)
 

@@ -15,6 +15,7 @@ This manual covers everything you need to know to install, set up, and use the S
    - [Windows](#windows)
    - [Docker](#docker)
    - [Raspberry Pi](#raspberry-pi)
+   - [Running as a Service (Auto-Start After Reboot)](#running-as-a-service-auto-start-after-reboot)
 4. [First-Time Setup](#4-first-time-setup)
 5. [Logging In](#5-logging-in)
 6. [EDGE Server Access](#6-edge-server-access)
@@ -91,7 +92,7 @@ Every platform uses **one command**. The automated `setup.sh` (or `setup.bat` on
 | **Raspberry Pi** | `-rpi-arm.tar.gz` | `tar -xzf *.tar.gz && cd */ && sudo bash setup.sh --install` |
 | **Docker** | any release or repo | `bash setup.sh --docker` |
 
-After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). Default login: **admin** / **admin123**.
+After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). On first run, credentials are generated automatically and printed in the server log — **save them**. You can also set them via environment variables (`ADMIN_USER`, `ADMIN_PASS`, `SUPERADMIN_PASS`) before running setup.
 
 ---
 
@@ -168,11 +169,17 @@ The image is multi-arch (amd64 + arm64). Environment variables:
 | `HTTP_PORT` | `80` | Web UI and API port |
 | `MQTT_PORT` | `1883` | MQTT broker port |
 | `MODBUS_PORT` | `502` | Modbus TCP port |
-| `ADMIN_USER` | `admin` | Initial admin username |
-| `ADMIN_PASS` | `changeme` | Initial admin password |
+| `ADMIN_USER` | `admin` | Initial admin username (first run only) |
+| `ADMIN_PASS` | *(generated)* | Initial admin password (first run only) |
+| `SUPERADMIN_PASS` | *(generated)* | Initial superadmin password (first run only) |
+| `MQTT_USER` | `edge-server` | MQTT broker username |
+| `MQTT_PASS` | *(empty)* | MQTT broker password |
+| `JWT_SECRET` | *(random)* | JWT signing secret — set for persistent sessions |
 | `SIMULATOR_MODE` | `false` | Enable PLC simulator for testing |
 | `DATA_DIR` | `/data` | Persistent data volume |
 | `LOG_LEVEL` | `info` | Log verbosity |
+
+> **Important:** If `ADMIN_PASS` and `SUPERADMIN_PASS` are not set, random passwords are generated on first run and printed in the server log. Set them explicitly for production deployments.
 
 ---
 
@@ -207,23 +214,126 @@ On Windows, edit `setup.bat` and change the `set HTTP_PORT=80` line.
 
 ---
 
+### Running as a Service (Auto-Start After Reboot)
+
+To ensure the server starts automatically after a power cycle or reboot, install it as a system service.
+
+#### Linux (systemd) — All Distributions
+
+```bash
+sudo bash setup.sh --install
+```
+
+This registers `swimex-edge` as a systemd service that:
+- Starts automatically on boot
+- Restarts automatically if it crashes (5-second delay)
+- Runs as a dedicated `swimex` service user (not root)
+- Binds to privileged ports (80, 502) via `CAP_NET_BIND_SERVICE`
+- Logs to the system journal
+
+**Manage the service:**
+
+| Action | Command |
+|--------|---------|
+| Check status | `sudo systemctl status swimex-edge` |
+| View logs (live) | `sudo journalctl -u swimex-edge -f` |
+| Restart | `sudo systemctl restart swimex-edge` |
+| Stop | `sudo systemctl stop swimex-edge` |
+| Disable auto-start | `sudo systemctl disable swimex-edge` |
+| Re-enable auto-start | `sudo systemctl enable swimex-edge` |
+
+**Configuration:** Edit environment variables in the service unit file:
+```bash
+sudo systemctl edit swimex-edge
+```
+Add overrides like:
+```ini
+[Service]
+Environment=HTTP_PORT=8080
+Environment=LOG_LEVEL=debug
+```
+Then restart: `sudo systemctl restart swimex-edge`
+
+#### Windows — Run as a Windows Service
+
+1. Download [NSSM](https://nssm.cc/download) (the Non-Sucking Service Manager)
+2. Open a **Command Prompt as Administrator**
+3. Install the service:
+   ```cmd
+   nssm install SwimExEDGE "C:\SwimEx\node.exe" "C:\SwimEx\dist\app\index.js"
+   nssm set SwimExEDGE AppDirectory "C:\SwimEx"
+   nssm set SwimExEDGE AppEnvironmentExtra HTTP_PORT=80 MODBUS_PORT=502 DATA_DIR=C:\SwimEx\data
+   nssm start SwimExEDGE
+   ```
+4. The service starts automatically after every reboot
+
+**Manage the service:**
+
+| Action | Command |
+|--------|---------|
+| Check status | `sc query SwimExEDGE` or `services.msc` |
+| Stop | `nssm stop SwimExEDGE` |
+| Restart | `nssm restart SwimExEDGE` |
+| Remove | `nssm remove SwimExEDGE confirm` |
+| View logs | Check Windows Event Viewer |
+
+#### Docker — Restart Policy
+
+Docker Compose already includes `restart: unless-stopped`. To ensure Docker itself starts on boot:
+
+```bash
+sudo systemctl enable docker
+```
+
+Manage containers:
+
+| Action | Command |
+|--------|---------|
+| Start | `docker compose up -d` |
+| Stop | `docker compose down` |
+| View logs | `docker compose logs -f` |
+| Restart | `docker compose restart` |
+
+#### Raspberry Pi — Identical to Linux
+
+The RPi installer (`sudo bash setup.sh --install`) uses the same systemd service with additional optimizations (reduced GPU memory, headless mode). The service starts on every boot automatically.
+
+---
+
 ## 4. First-Time Setup
 
-When you first open SwimEx EDGE in your browser, the system has already created default accounts for you:
+On first run, the server creates two accounts automatically:
 
-| Who | Username | Password | What They Can Do |
-|-----|----------|----------|------------------|
-| Super Administrator | `superadmin` | `superadmin` | Everything (hidden advanced settings) |
-| Administrator | `admin` | `admin123` | Manage users, devices, pool settings |
-| Demo Swimmer | `swimmer` | `swimmer` | Run workouts, save programs |
+| Who | Username | Password |
+|-----|----------|----------|
+| Super Administrator | `superadmin` | Set via `SUPERADMIN_PASS` env var, or generated and printed in server log |
+| Administrator | `admin` (or `ADMIN_USER`) | Set via `ADMIN_PASS` env var, or generated and printed in server log |
+
+**How to find your generated credentials:**
+- **Foreground mode:** Printed in the terminal during startup
+- **systemd service:** `sudo journalctl -u swimex-edge | grep password`
+- **Docker:** `docker logs swimex-edge | grep password`
 
 ### Important: Change Your Passwords
 
-1. Log in as **admin**
+1. Log in with the credentials from the server log
 2. Click your username in the top-right corner
 3. Go to **Profile** → **Change Password**
 4. Set a strong, new password
 5. Repeat for the **superadmin** account
+
+### Setting Credentials Explicitly (Production)
+
+For production, set passwords before first run so they never appear in logs:
+
+```bash
+ADMIN_PASS=YourStrongPassword SUPERADMIN_PASS=AnotherStrongPassword bash setup.sh
+```
+
+Or in Docker:
+```bash
+docker run -d -e ADMIN_PASS=YourStrongPassword -e SUPERADMIN_PASS=AnotherStrongPassword ...
+```
 
 ---
 
@@ -746,7 +856,7 @@ Every push and pull request to `main` runs the CI workflow which:
 
 - Double-check your username and password (they're case-sensitive)
 - Ask an Administrator to check if your account is disabled
-- Try the default accounts: `admin` / `admin123`
+- Check the server log for generated credentials: `journalctl -u swimex-edge | grep password`
 
 ### "View only — cannot control pool"
 

@@ -27,15 +27,18 @@ Open the URL shown in the terminal when setup completes.
 
 ---
 
-## Default Login Accounts
+## First-Run Credentials
 
-| Role | Username | Password |
-|------|----------|----------|
-| Super Admin | `superadmin` | `superadmin` |
-| Admin | `admin` | `admin123` |
-| Demo Swimmer | `swimmer` | `swimmer` |
+On first run, the server creates `superadmin` and `admin` accounts with **randomly generated passwords** printed in the server log.
 
-> **Change these passwords immediately after first login.**
+To find them:
+- **Foreground:** Look at the terminal output during startup
+- **Service:** `sudo journalctl -u swimex-edge | grep password`
+- **Docker:** `docker logs swimex-edge | grep password`
+
+To set passwords explicitly: `ADMIN_PASS=MyPass SUPERADMIN_PASS=MyPass2 bash setup.sh`
+
+> **Change passwords after first login via Profile → Change Password.**
 
 ---
 

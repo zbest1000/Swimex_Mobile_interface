@@ -25,7 +25,7 @@ const DEFAULT_BROKER_CONFIG: EmbeddedBrokerConfig = {
   connectTimeout: 30000,
   authenticate: process.env.MQTT_AUTH !== 'false',
   credentials: [
-    { username: process.env.MQTT_USER ?? 'edge-server', password: process.env.MQTT_PASS ?? 'edge-server-secret' },
+    { username: process.env.MQTT_USER ?? 'edge-server', password: process.env.MQTT_PASS ?? '' },
   ],
 };
 

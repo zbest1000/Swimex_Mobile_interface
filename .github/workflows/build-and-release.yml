@@ -251,13 +251,11 @@ jobs:
           set MQTT_PORT=1883
           set DATA_DIR=%~dp0data
           set CONFIG_DIR=%~dp0config
-          set ADMIN_USER=admin
-          set ADMIN_PASS=admin123
 
           echo Starting server...
           echo.
           echo   Web UI:  http://localhost:%HTTP_PORT%
-          echo   Login:   admin / admin123
+          echo   Credentials are printed in the log on first run.
           echo.
           echo Press Ctrl+C to stop the server.
           echo ========================================
@@ -457,4 +455,4 @@ jobs:
               ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
             ```
 
-            Default login: **admin** / **admin123**. See [MANUAL.md](MANUAL.md) for details.
+            Credentials are generated on first run and printed in the server log. See [MANUAL.md](MANUAL.md) for details.
