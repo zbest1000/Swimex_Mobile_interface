@@ -11,12 +11,10 @@ This manual covers everything you need to know to install, set up, and use the S
 1. [What is SwimEx EDGE?](#1-what-is-swimex-edge)
 2. [What You Need (Requirements)](#2-what-you-need)
 3. [Installation](#3-installation)
-   - [Option A: Quick Install (Recommended)](#option-a-quick-install)
-   - [Option B: Docker Install](#option-b-docker-install)
-   - [Option C: Linux Portable (No Install)](#option-c-linux-portable-no-install)
-   - [Option D: Windows EXE (Portable)](#option-d-windows-exe-portable)
-   - [Option E: Windows Install (From Source)](#option-e-windows-install-from-source)
-   - [Option F: Raspberry Pi](#option-f-raspberry-pi)
+   - [Linux](#linux)
+   - [Windows](#windows)
+   - [Docker](#docker)
+   - [Raspberry Pi](#raspberry-pi)
 4. [First-Time Setup](#4-first-time-setup)
 5. [Logging In](#5-logging-in)
 6. [EDGE Server Access](#6-edge-server-access)
@@ -81,99 +79,89 @@ You need ONE of these:
 
 ## 3. Installation
 
-Choose the installation option that matches your environment. All options produce the same running EDGE Server.
+Every platform uses **one command**. The automated `setup.sh` (or `setup.bat` on Windows) handles everything: detecting the environment, installing dependencies if needed, building, and starting the server.
 
-| Option | Best For | Requires |
-|--------|----------|----------|
-| **A — Quick Install** | Linux / Mac development | Node.js 18+ |
-| **B — Docker** | Production, any OS with Docker | Docker Engine + Compose |
-| **C — Linux Portable** | Any Linux server (no Node install) | Any x64 Linux (glibc 2.28+) |
-| **D — Windows EXE** | Windows deployment (no Node install) | Windows 10/11 x64 |
-| **E — Windows (Source)** | Windows developers | Node.js 18+ |
-| **F — Raspberry Pi** | Dedicated pool-side hardware | RPi 3B+/4/5, Raspberry Pi OS |
+### Quick Reference
 
----
+| Platform | Download | One Command |
+|----------|----------|-------------|
+| **Linux x64** | `-linux-x64.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+| **Any Linux / Mac** | `.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+| **Windows** | `-windows-x64.zip` | Extract ZIP → double-click `setup.bat` |
+| **Raspberry Pi** | `-rpi-arm.tar.gz` | `tar -xzf *.tar.gz && cd */ && sudo bash setup.sh --install` |
+| **Docker** | any release or repo | `bash setup.sh --docker` |
 
-### Option A: Quick Install
-
-This is the easiest method. It works on Mac, Linux, and Windows (with Git Bash or WSL).
-
-#### Step 1: Install Node.js (if not already installed)
-
-1. Go to **https://nodejs.org**
-2. Download the **LTS** version (the green button)
-3. Run the installer — click Next through all screens
-4. Restart your terminal/command prompt after installing
-
-To verify it worked, open a terminal and type:
-```
-node --version
-```
-You should see something like `v20.11.0`. The number must be 18 or higher.
-
-#### Step 2: Download SwimEx EDGE
-
-Download the SwimEx EDGE release archive from the [GitHub Releases](../../releases) page. Pick `swimex-edge-server-<version>.tar.gz` (Linux/Mac) or `.zip` (Windows). Extract it to a folder you'll remember (for example, `~/SwimEx` or `C:\SwimEx`).
-
-#### Step 3: Run the Setup
-
-1. Open a terminal (Command Prompt on Windows, Terminal on Mac/Linux)
-2. Navigate to the SwimEx EDGE folder:
-   ```
-   cd path/to/swimex-edge
-   ```
-3. Run the setup script:
-   ```
-   bash setup.sh
-   ```
-4. Wait about 30–60 seconds. You'll see a progress display.
-5. When you see the green **"SwimEx EDGE is running!"** message, you're done!
-
-The screen will show you a URL like `http://192.168.1.100` — open this in your browser.
+After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). Default login: **admin** / **admin123**.
 
 ---
 
-### Option B: Docker Install
+### Linux
 
-Docker is recommended for production deployments. The image is multi-architecture (amd64 + arm64) so it runs on standard servers and ARM hardware alike.
+Download the release for your architecture from the [Releases](../../releases) page.
 
-#### Using the Quick Script
+**Linux x64 (self-contained — recommended for most servers):**
+```bash
+tar -xzf swimex-edge-server-*-linux-x64.tar.gz
+cd swimex-edge-server-*-linux-x64
+bash setup.sh
+```
 
-1. Open a terminal in the SwimEx EDGE folder
-2. Run:
-   ```
-   bash setup-docker.sh
-   ```
-3. Wait for the containers to build and start (about 2–3 minutes on first run)
-4. Open `http://your-server-ip` in a browser
+**Generic (any Linux / Mac with Node.js — the script auto-installs Node if missing):**
+```bash
+tar -xzf swimex-edge-server-*.tar.gz
+cd swimex-edge-server-*/server   # or project root if cloned from git
+bash setup.sh
+```
 
-#### Using a Pre-Built Image
+The setup script automatically:
+- Detects if a bundled Node.js binary is present, or installs Node.js 18+ (apt, yum, dnf, brew, pacman, zypper)
+- Installs production dependencies
+- Builds TypeScript if running from source
+- Starts the server and waits for the health check
+- Shows the URL when ready
 
-If you have a release image published to a registry:
+**Compatibility:** The Linux x64 package requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
+
+**To install as a persistent systemd service (auto-start on boot):**
+```bash
+sudo bash setup.sh --install
+```
+
+**To manage the service after installation:**
+```bash
+sudo systemctl status swimex-edge
+sudo systemctl restart swimex-edge
+sudo journalctl -u swimex-edge -f
+```
+
+---
+
+### Windows
+
+1. Download `swimex-edge-server-<version>-windows-x64.zip` from the [Releases](../../releases) page
+2. Extract the ZIP (e.g., to `C:\SwimEx`)
+3. **Double-click `setup.bat`**
+
+That's it. The server starts, the console shows the URL. No Node.js install needed — the portable `node.exe` is included.
+
+---
+
+### Docker
 
 ```bash
-docker pull ghcr.io/<org>/swimex/edge-server:latest
+bash setup.sh --docker
+```
 
+Or, using a pre-built image directly:
+
+```bash
 docker run -d --name swimex-edge \
   -p 80:80 -p 502:502 -p 1883:1883 \
   -v swimex-data:/data \
-  -e ADMIN_USER=admin \
-  -e ADMIN_PASS=changeme \
   ghcr.io/<org>/swimex/edge-server:latest
 ```
 
-Replace `<org>` with your GitHub organization or username.
-
-#### Docker Compose (Production)
-
-Create a `docker-compose.yml` or use the one included in `server/docker/`:
-
-```bash
-cd server/docker
-docker compose up -d
-```
-
-Key environment variables:
+The image is multi-arch (amd64 + arm64). Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -184,167 +172,38 @@ Key environment variables:
 | `ADMIN_PASS` | `changeme` | Initial admin password |
 | `SIMULATOR_MODE` | `false` | Enable PLC simulator for testing |
 | `DATA_DIR` | `/data` | Persistent data volume |
-| `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
-
-**Persistent data:** The `/data` volume stores the SQLite database, uploads, and logs. Always mount a named volume or bind mount so data survives container restarts.
-
-**Health check:** `curl http://localhost/api/health` — returns JSON with `{"status":"ok"}`.
+| `LOG_LEVEL` | `info` | Log verbosity |
 
 ---
 
-### Option C: Linux Portable (No Install)
-
-The Linux portable package is self-contained — it bundles a Node.js binary so you don't need to install Node.js or any other runtime. Works on most x64 Linux distributions (Ubuntu, Debian, Fedora, RHEL, CentOS, SUSE, Arch, etc.).
-
-1. Download `swimex-edge-server-<version>-linux-x64.tar.gz` from the [Releases](../../releases) page
-2. Extract anywhere:
-   ```bash
-   tar -xzf swimex-edge-server-*-linux-x64.tar.gz
-   cd swimex-edge-server-*-linux-x64
-   ```
-3. Start the server:
-   ```bash
-   ./swimex-edge-server.sh
-   ```
-4. Open `http://localhost` in your browser (or `http://<server-ip>` from another device)
-5. Default login: **admin** / **admin123**
-
-#### Compatibility
-
-Requires glibc 2.28 or newer. This covers:
-- Ubuntu 18.04+
-- Debian 10+
-- Fedora 29+
-- RHEL / CentOS / Rocky / Alma 8+
-- openSUSE 15.1+
-- Arch Linux (rolling)
-
-#### Changing Ports
+### Raspberry Pi
 
 ```bash
-HTTP_PORT=8080 MODBUS_PORT=5020 ./swimex-edge-server.sh
+tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
+cd swimex-edge-server-*-rpi-arm
+sudo bash setup.sh --install
 ```
 
-#### Install as a systemd Service
+The setup script automatically installs Node.js if needed, creates a dedicated system user, sets GPU memory to 16 MB for headless mode, and registers a hardened systemd service.
 
-To run the server on boot:
+Tested on RPi 3B+, 4B, and 5 (Raspberry Pi OS Lite/Desktop, 32-bit and 64-bit).
 
-```bash
-sudo bash install-service.sh
-```
-
-This registers a `swimex-edge` systemd service. Manage with:
-```bash
-sudo systemctl status swimex-edge
-sudo systemctl restart swimex-edge
-sudo journalctl -u swimex-edge -f
-```
-
-#### Running on ARM Linux (non-RPi)
-
-The Linux x64 package is for x86_64 systems. For ARM-based Linux (Orange Pi, NVIDIA Jetson, etc.), use the **Docker** option (which supports `linux/arm64`) or install Node.js manually and use the generic tarball (Option A).
+**Headless setup (no monitor):**
+1. Flash Raspberry Pi OS Lite using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) — configure Wi-Fi, SSH, and hostname in the imager
+2. SSH in: `ssh pi@swimex-edge.local`
+3. Transfer and extract the package, run `sudo bash setup.sh --install`
+4. Access the Web UI from any browser on the network
 
 ---
 
-### Option D: Windows EXE (Portable)
+### Changing Ports
 
-The Windows release is a self-contained ZIP — no Node.js installation required. It bundles a portable `node.exe` alongside the compiled server.
-
-1. Download `swimex-edge-server-<version>-windows-x64.zip` from the [Releases](../../releases) page
-2. Extract the ZIP to a folder (e.g., `C:\SwimEx`)
-3. **Double-click `swimex-edge-server.bat`**
-4. A console window opens showing the server startup log
-5. Open `http://localhost` in your browser
-6. Default login: **admin** / **admin123**
-
-#### Install as a Windows Service (Auto-Start on Boot)
-
-1. Right-click `install-service.ps1` → **Run with PowerShell** (as Administrator)
-2. Follow the on-screen instructions (uses [NSSM](https://nssm.cc/) to register the service)
-3. The service starts automatically after reboot
-
-#### Changing the Port
-
-Edit `swimex-edge-server.bat` and change `set HTTP_PORT=80` to your desired port (e.g., `set HTTP_PORT=8080`).
-
----
-
-### Option E: Windows Install (From Source)
-
-If you prefer to install from source with Node.js:
-
-1. Install Node.js from https://nodejs.org (LTS version)
-2. Open **Command Prompt** (search for "cmd" in the Start menu)
-3. Navigate to the SwimEx EDGE folder:
-   ```
-   cd C:\path\to\swimex-edge\server
-   ```
-4. Install dependencies:
-   ```
-   npm install
-   ```
-5. Build the application:
-   ```
-   npm run build
-   ```
-6. Start the server:
-   ```
-   set HTTP_PORT=80
-   set ADMIN_USER=admin
-   set ADMIN_PASS=admin123
-   npm start
-   ```
-7. Open `http://localhost` in your browser
-
----
-
-### Option F: Raspberry Pi
-
-The Raspberry Pi package is optimized for headless RPi deployments (pool-side edge hardware). Tested on RPi 3B+, 4B, and 5 running Raspberry Pi OS (Lite or Desktop, 32-bit or 64-bit).
-
-#### Quick Install
-
-1. Download `swimex-edge-server-<version>-rpi-arm.tar.gz` from the [Releases](../../releases) page
-2. Copy it to the Raspberry Pi (via SCP, USB, etc.)
-3. Extract and run the installer:
-   ```bash
-   tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
-   cd swimex-edge-server-*-rpi-arm
-   sudo bash installer/install.sh
-   ```
-4. The installer will:
-   - Install Node.js if not present (prompts for confirmation)
-   - Copy files to `/opt/swimex-edge`
-   - Install production dependencies
-   - Create a dedicated `swimex` service user
-   - Set GPU memory to 16 MB for headless mode
-   - Register and start a `systemd` service
-5. Open `http://<raspberry-pi-ip>` from any browser on the same network
-
-#### Managing the Service
-
+On any platform, set environment variables before running:
 ```bash
-sudo systemctl status swimex-edge    # Check status
-sudo systemctl restart swimex-edge   # Restart
-sudo journalctl -u swimex-edge -f    # Live logs
+HTTP_PORT=8080 MODBUS_PORT=5020 bash setup.sh
 ```
 
-#### RPi Hardware Recommendations
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| Model | RPi 3B+ | RPi 4B (2 GB+) or RPi 5 |
-| Storage | 8 GB microSD | 16 GB+ A2 microSD or USB SSD |
-| Network | Wi-Fi | Ethernet (PLC) + Wi-Fi (clients) |
-| Power | Official PSU | UPS HAT for graceful shutdown |
-
-#### Headless Setup (No Monitor)
-
-1. Flash Raspberry Pi OS Lite to the SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
-2. In the imager, configure Wi-Fi, enable SSH, and set a hostname (e.g., `swimex-edge`)
-3. Boot the RPi, SSH in: `ssh pi@swimex-edge.local`
-4. Run the installer as shown above
-5. Access the Web UI from any device on the network
+On Windows, edit `setup.bat` and change the `set HTTP_PORT=80` line.
 
 ---
 
@@ -832,14 +691,13 @@ SwimEx EDGE uses GitHub Actions for automated builds. Every release produces mul
 
 ### Release Artifacts
 
-| Artifact | Platform | Description |
-|----------|----------|-------------|
-| `swimex-edge-server-<tag>-linux-x64.tar.gz` | Linux x64 | Self-contained package with embedded Node.js. Run `./swimex-edge-server.sh`. |
-| `swimex-edge-server-<tag>.tar.gz` | Linux / Mac (generic) | Compiled JS + assets. Requires Node.js 18+ on host. |
-| `swimex-edge-server-<tag>.zip` | Any OS (generic) | Same as above, ZIP format. |
-| `swimex-edge-server-<tag>-windows-x64.zip` | Windows x64 | Portable package with embedded `node.exe`. No install required. |
-| `swimex-edge-server-<tag>-rpi-arm.tar.gz` | Raspberry Pi (ARM) | Compiled JS + RPi installer script. Runs on RPi 3B+/4/5. |
-| Docker image | `linux/amd64`, `linux/arm64` | Multi-arch image pushed to GHCR or Docker Hub. |
+| Artifact | Platform | Setup |
+|----------|----------|-------|
+| `-linux-x64.tar.gz` | Linux x64 | `bash setup.sh` — self-contained, no Node.js install needed |
+| `.tar.gz` / `.zip` | Linux / Mac / Windows | `bash setup.sh` — auto-installs Node.js if missing |
+| `-windows-x64.zip` | Windows x64 | Double-click `setup.bat` — self-contained, no Node.js install needed |
+| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | `sudo bash setup.sh --install` — auto-installs Node.js, creates service |
+| Docker image | `linux/amd64`, `linux/arm64` | `bash setup.sh --docker` or `docker run ...` |
 
 ### Triggering a Build
 
@@ -913,12 +771,12 @@ Every push and pull request to `main` runs the CI workflow which:
 - Make sure Node.js is version 18 or higher: `node --version`
 - Try deleting the `server/data` folder and restarting (this resets the database)
 
-### Linux portable won't start
+### Setup script fails or server won't start
 
-- Ensure the archive was fully extracted: `tar -xzf swimex-edge-server-*-linux-x64.tar.gz`
-- Make the launcher executable: `chmod +x swimex-edge-server.sh`
-- If you see `GLIBC_X.XX not found`, your Linux is too old. Requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+).
-- For port 80, run as root (`sudo ./swimex-edge-server.sh`) or use `HTTP_PORT=8080`
+- **`GLIBC not found`**: Your Linux is too old for the x64 package. Requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+). Use Docker instead.
+- **Port 80 requires root**: Run `sudo bash setup.sh` or set `HTTP_PORT=8080`
+- **`npm ci` fails on RPi**: Add swap memory: `sudo dphys-swapfile swapon`
+- **Windows antivirus blocks `node.exe`**: Add the extracted folder to your antivirus exclusions
 
 ### Docker container exits immediately
 
@@ -926,18 +784,10 @@ Every push and pull request to `main` runs the CI workflow which:
 - Ensure `/data` volume is writable
 - Verify port 80 isn't already bound: `docker run -p 8080:80 ...` to use an alternate port
 
-### Raspberry Pi installer fails
+### Native module build errors on RPi / ARM
 
-- Ensure you're running as root: `sudo bash installer/install.sh`
-- If `npm ci` fails with memory errors, add swap: `sudo dphys-swapfile swapon`
-- Check Node.js is installed: `node --version`
-- For native module build errors (argon2, better-sqlite3), install build tools: `sudo apt-get install python3 make g++`
-
-### Windows EXE won't start
-
-- Right-click `swimex-edge-server.bat` → **Run as administrator** (required for port 80)
-- Or edit the `.bat` file to use `set HTTP_PORT=8080` to avoid needing admin privileges
-- Ensure no antivirus is blocking `node.exe`
+- Install build tools: `sudo apt-get install python3 make g++`
+- Then re-run: `sudo bash setup.sh --install`
 
 ---
 
@@ -962,7 +812,7 @@ A: Yes! While a program is running, you can use the +5/-5 buttons to adjust the 
 A: The pool motor stops immediately (no power = no motor). When power returns, the server restarts automatically (if configured as a service or using Docker). You'll need to manually start a new workout.
 
 **Q: Can I run this on a Raspberry Pi?**
-A: Yes! Download the RPi ARM package from the Releases page, extract it, and run `sudo bash installer/install.sh`. Works on RPi 3B+, 4B, and 5. See [Option F: Raspberry Pi](#option-f-raspberry-pi) for full instructions.
+A: Yes! Download the RPi ARM package from the Releases page, extract it, and run `sudo bash setup.sh --install`. Works on RPi 3B+, 4B, and 5. See [Raspberry Pi](#raspberry-pi) for full instructions.
 
 **Q: How do I update SwimEx EDGE?**
 A: Download the new version, stop the current server, replace the files, and run `bash setup.sh` again (or `docker pull` for Docker). Your data (users, workouts, settings) is preserved in the `data/` folder (or `/data` Docker volume).

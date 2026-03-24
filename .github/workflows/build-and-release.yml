@@ -159,30 +159,10 @@ jobs:
           cp -r server/templates "${PKG}/"
           cp server/package.json "${PKG}/"
 
-          cp server/installer/linux/install.sh "${PKG}/install-service.sh" 2>/dev/null || true
+          cp setup.sh "${PKG}/setup.sh"
+          chmod +x "${PKG}/setup.sh"
           cp README.md "${PKG}/" 2>/dev/null || true
           cp MANUAL.md "${PKG}/" 2>/dev/null || true
-
-          cat > "${PKG}/swimex-edge-server.sh" << 'LAUNCHER'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-          export HTTP_PORT="${HTTP_PORT:-80}"
-          export MODBUS_PORT="${MODBUS_PORT:-502}"
-          export MQTT_PORT="${MQTT_PORT:-1883}"
-          export DATA_DIR="${DATA_DIR:-${SCRIPT_DIR}/data}"
-          export CONFIG_DIR="${CONFIG_DIR:-${SCRIPT_DIR}/config}"
-          mkdir -p "${DATA_DIR}"
-          echo "========================================"
-          echo " SwimEx EDGE Server"
-          echo "========================================"
-          echo " Web UI:  http://0.0.0.0:${HTTP_PORT}"
-          echo " Data:    ${DATA_DIR}"
-          echo " Press Ctrl+C to stop."
-          echo "========================================"
-          exec "${SCRIPT_DIR}/node" "${SCRIPT_DIR}/dist/app/index.js"
-          LAUNCHER
-          chmod +x "${PKG}/swimex-edge-server.sh"
 
           tar -czf "swimex-edge-server-${TAG}-linux-x64.tar.gz" "${PKG}"
 
@@ -253,43 +233,37 @@ jobs:
           Copy-Item -Recurse server\templates "$releaseDir\templates"
           Copy-Item server\package.json "$releaseDir\package.json"
 
-          if (Test-Path server\installer\windows\install.ps1) {
-            Copy-Item server\installer\windows\install.ps1 "$releaseDir\install-service.ps1"
-          }
           if (Test-Path MANUAL.md) { Copy-Item MANUAL.md "$releaseDir\MANUAL.md" }
           if (Test-Path README.md) { Copy-Item README.md "$releaseDir\README.md" }
 
           @"
           @echo off
-          title SwimEx EDGE Server
+          title SwimEx EDGE Server — Setup
           echo ========================================
-          echo  SwimEx EDGE Server $tag
+          echo  SwimEx EDGE Server — Automated Setup
           echo ========================================
           echo.
-          echo Starting server...
-          echo Press Ctrl+C to stop.
-          echo.
+
+          if not exist "%~dp0data" mkdir "%~dp0data"
+
           set HTTP_PORT=80
           set MODBUS_PORT=502
           set MQTT_PORT=1883
           set DATA_DIR=%~dp0data
           set CONFIG_DIR=%~dp0config
+          set ADMIN_USER=admin
+          set ADMIN_PASS=admin123
+
+          echo Starting server...
+          echo.
+          echo   Web UI:  http://localhost:%HTTP_PORT%
+          echo   Login:   admin / admin123
+          echo.
+          echo Press Ctrl+C to stop the server.
+          echo ========================================
           "%~dp0node.exe" "%~dp0dist\app\index.js"
           pause
-          "@ | Out-File -FilePath "$releaseDir\swimex-edge-server.bat" -Encoding ascii
-
-          @"
-          SwimEx EDGE Server $tag — Windows Quick Start
-          ==============================================
-          1. Double-click  swimex-edge-server.bat  to start the server.
-          2. Open http://localhost in your browser.
-          3. Default login: admin / admin123
-
-          To install as a Windows Service (auto-start on boot):
-            Right-click install-service.ps1 → Run with PowerShell (as Administrator)
-
-          To change the HTTP port, edit swimex-edge-server.bat and change HTTP_PORT.
-          "@ | Out-File -FilePath "$releaseDir\QUICKSTART.txt" -Encoding utf8
+          "@ | Out-File -FilePath "$releaseDir\setup.bat" -Encoding ascii
 
           Compress-Archive -Path "$releaseDir\*" -DestinationPath "swimex-edge-server-${tag}-windows-x64.zip"
 
@@ -339,10 +313,8 @@ jobs:
           cp -r server/templates "${PKG_DIR}/"
           cp server/package.json server/package-lock.json "${PKG_DIR}/"
 
-          mkdir -p "${PKG_DIR}/installer"
-          cp server/installer/rpi/install.sh "${PKG_DIR}/installer/"
-          chmod +x "${PKG_DIR}/installer/install.sh"
-
+          cp setup.sh "${PKG_DIR}/setup.sh"
+          chmod +x "${PKG_DIR}/setup.sh"
           cp README.md "${PKG_DIR}/" 2>/dev/null || true
           cp MANUAL.md "${PKG_DIR}/" 2>/dev/null || true
 
@@ -466,15 +438,18 @@ jobs:
 
             ### Download Options
 
-            | Platform | File | Notes |
+            | Platform | File | Setup |
             |----------|------|-------|
-            | **Linux x64** | `swimex-edge-server-${{ inputs.release_tag }}-linux-x64.tar.gz` | Self-contained with Node.js. Run `./swimex-edge-server.sh`. |
-            | **Linux (generic)** | `swimex-edge-server-${{ inputs.release_tag }}.tar.gz` | Requires Node.js 18+. Run `installer/linux/install.sh`. |
-            | **Windows x64** | `swimex-edge-server-${{ inputs.release_tag }}-windows-x64.zip` | Self-contained with Node.js. Double-click `swimex-edge-server.bat`. |
-            | **Raspberry Pi** | `swimex-edge-server-${{ inputs.release_tag }}-rpi-arm.tar.gz` | For RPi 3/4/5 (ARM). Run `installer/install.sh`. |
-            | **Docker** | See below | Multi-arch (amd64 + arm64). |
+            | **Linux x64** | `swimex-edge-server-${{ inputs.release_tag }}-linux-x64.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+            | **Linux (generic)** | `swimex-edge-server-${{ inputs.release_tag }}.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+            | **Windows x64** | `swimex-edge-server-${{ inputs.release_tag }}-windows-x64.zip` | Extract ZIP → double-click `setup.bat` |
+            | **Raspberry Pi** | `swimex-edge-server-${{ inputs.release_tag }}-rpi-arm.tar.gz` | `tar -xzf *.tar.gz && cd */ && sudo bash setup.sh --install` |
+            | **Docker** | See below | `bash setup.sh --docker` |
 
-            ### Docker
+            Every platform: **one command to run**.
+            Add `--install` to register as a system service, or `--docker` for Docker Compose.
+
+            ### Docker (pre-built image)
 
             ```bash
             docker pull ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
@@ -482,11 +457,4 @@ jobs:
               ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
             ```
 
-            ### Quick Start
-
-            1. Download the archive for your platform
-            2. Extract and follow the included QUICKSTART or run the installer script
-            3. Open `http://<server-ip>` in a browser
-            4. Default login: **admin** / **admin123**
-
-            See [MANUAL.md](MANUAL.md) for full setup and deployment instructions.
+            Default login: **admin** / **admin123**. See [MANUAL.md](MANUAL.md) for details.

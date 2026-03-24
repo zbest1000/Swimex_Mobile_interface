@@ -1,26 +1,29 @@
-# SwimEx EDGE — 60-Second Quick Start
+# SwimEx EDGE — Quick Start
 
-## Option A: Direct Install (Recommended)
+## One Command Setup
 
-**Requirements:** A computer with Node.js 18+ installed ([download here](https://nodejs.org))
+Download a release from the [Releases](../../releases) page, extract it, and run the setup script. It handles everything automatically.
 
-Open a terminal and run:
-
+**Linux / Mac:**
 ```bash
+tar -xzf swimex-edge-server-*.tar.gz && cd swimex-edge-server-*
 bash setup.sh
 ```
 
-That's it. Open the URL shown in your browser.
+**Windows:** Extract the ZIP → double-click `setup.bat`
 
----
-
-## Option B: Docker Install
-
-**Requirements:** Docker and Docker Compose installed ([download here](https://docs.docker.com/get-docker/))
-
+**Docker:**
 ```bash
-bash setup-docker.sh
+bash setup.sh --docker
 ```
+
+**Raspberry Pi:**
+```bash
+tar -xzf swimex-edge-server-*-rpi-arm.tar.gz && cd swimex-edge-server-*
+sudo bash setup.sh --install
+```
+
+Open the URL shown in the terminal when setup completes.
 
 ---
 
@@ -36,36 +39,35 @@ bash setup-docker.sh
 
 ---
 
-## What Happens Next
+## Setup Modes
 
-1. **Open your browser** → go to the URL shown after setup
-2. **Log in** as `admin` / `admin123`
-3. **Try a workout** → click "Quick Start" on the home screen → set speed → press START
-4. **Explore** → check workout history, custom programs, admin panel
+| Flag | What It Does |
+|------|-------------|
+| *(none)* | Start server in foreground (Ctrl+C to stop) |
+| `--install` | Install as systemd service (auto-start on boot, requires `sudo`) |
+| `--docker` | Deploy using Docker Compose |
 
 ---
 
 ## Stop / Restart
 
-**Direct install:**
-```bash
-# Stop
-kill $(cat server/data/server.pid 2>/dev/null) 2>/dev/null || pkill -f "node dist/app/index.js"
+**Foreground:** Press `Ctrl+C`
 
-# Restart
-bash setup.sh
+**Service:**
+```bash
+sudo systemctl stop swimex-edge
+sudo systemctl restart swimex-edge
+sudo journalctl -u swimex-edge -f
 ```
 
 **Docker:**
 ```bash
 cd server/docker
-docker compose down     # Stop
-docker compose up -d    # Start
-docker compose logs -f  # View logs
+docker compose down
+docker compose up -d
+docker compose logs -f
 ```
 
 ---
-
-## Need Help?
 
 See the full [User Manual](MANUAL.md) for detailed instructions.

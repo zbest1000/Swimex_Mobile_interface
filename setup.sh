@@ -1,184 +1,271 @@
 #!/usr/bin/env bash
 #
-# SwimEx EDGE — 60-Second Quick Setup
-# ====================================
-# Run this single command to install and start the EDGE server:
+# SwimEx EDGE — One-Step Automated Setup
+# =======================================
+# Single command to install and start:
 #
-#   curl -sSL https://your-repo/setup.sh | bash
-#   — or —
-#   bash setup.sh
+#   bash setup.sh              (run and keep in foreground)
+#   bash setup.sh --install    (install as systemd service)
+#   bash setup.sh --docker     (deploy with Docker Compose)
 #
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-BOLD='\033[1m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
-print_banner() {
-  echo ""
-  echo -e "${CYAN}${BOLD}"
-  echo "  ╔══════════════════════════════════════════╗"
-  echo "  ║                                          ║"
-  echo "  ║   🌊  SwimEx EDGE — Quick Setup  🌊     ║"
-  echo "  ║                                          ║"
-  echo "  ╚══════════════════════════════════════════╝"
-  echo -e "${NC}"
-}
-
-step() {
-  echo -e "\n${BLUE}${BOLD}[$1/5]${NC} ${BOLD}$2${NC}"
-}
-
-ok() {
-  echo -e "  ${GREEN}✓${NC} $1"
-}
-
-warn() {
-  echo -e "  ${YELLOW}⚠${NC} $1"
-}
-
-fail() {
-  echo -e "  ${RED}✗${NC} $1"
-  exit 1
-}
-
-# ─── Start ───────────────────────────────────────────
-print_banner
+ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
+fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
+step() { echo -e "\n${BLUE}${BOLD}[$1]${NC} ${BOLD}$2${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-SERVER_DIR="${SCRIPT_DIR}/server"
-DATA_DIR="${SERVER_DIR}/data"
+MODE="${1:-}"
+NODE_MIN=18
 
-if [ ! -f "${SERVER_DIR}/package.json" ]; then
-  fail "Cannot find server/package.json. Run this script from the project root directory."
+SVC_INSTALL_DIR="/opt/swimex-edge"
+SVC_DATA_DIR="/var/lib/swimex-edge"
+SVC_CONFIG_DIR="/etc/swimex-edge"
+SVC_NAME="swimex-edge"
+SVC_USER="swimex"
+
+echo -e "${CYAN}${BOLD}"
+echo "  ╔══════════════════════════════════════════╗"
+echo "  ║   SwimEx EDGE — Automated Setup          ║"
+echo "  ╚══════════════════════════════════════════╝"
+echo -e "${NC}"
+
+# ── Docker path ─────────────────────────────────────
+if [[ "$MODE" == "--docker" ]]; then
+  step "1/3" "Checking Docker..."
+  command -v docker &>/dev/null || fail "Docker not found. Install from https://docs.docker.com/get-docker/"
+  docker compose version &>/dev/null 2>&1 || docker-compose version &>/dev/null 2>&1 || fail "Docker Compose not found."
+  ok "Docker $(docker --version | grep -oP 'version \K[^,]+')"
+
+  step "2/3" "Starting containers..."
+  cd "${SCRIPT_DIR}/server/docker"
+  if docker compose version &>/dev/null 2>&1; then
+    docker compose up -d --build 2>&1 | tail -5
+  else
+    docker-compose up -d --build 2>&1 | tail -5
+  fi
+  ok "Containers started"
+
+  step "3/3" "Waiting for health check..."
+  for i in $(seq 1 60); do
+    curl -sf http://localhost:80/api/health >/dev/null 2>&1 && break
+    sleep 1
+  done
+  LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  echo ""
+  echo -e "${GREEN}${BOLD}  Setup complete!${NC}"
+  echo -e "  Web UI:  ${CYAN}http://${LOCAL_IP}${NC}"
+  echo -e "  Login:   admin / admin123"
+  echo -e "  Manage:  docker compose down | logs -f | restart"
+  exit 0
 fi
 
-# ─── Step 1: Check prerequisites ─────────────────────
-step 1 "Checking prerequisites..."
+# ── Detect what we have ─────────────────────────────
+HAS_BUNDLED_NODE=false
+HAS_PREBUILT=false
+SERVER_DIR=""
 
-# Check Node.js
-if command -v node &>/dev/null; then
-  NODE_VER=$(node -v | sed 's/v//')
-  NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
-  if [ "$NODE_MAJOR" -ge 18 ]; then
-    ok "Node.js v${NODE_VER}"
-  else
-    fail "Node.js v18+ required (found v${NODE_VER}). Install from https://nodejs.org"
-  fi
+if [ -x "${SCRIPT_DIR}/node" ] && [ -d "${SCRIPT_DIR}/dist" ]; then
+  HAS_BUNDLED_NODE=true
+  HAS_PREBUILT=true
+  SERVER_DIR="$SCRIPT_DIR"
+elif [ -d "${SCRIPT_DIR}/dist" ] && [ -f "${SCRIPT_DIR}/package.json" ]; then
+  HAS_PREBUILT=true
+  SERVER_DIR="$SCRIPT_DIR"
+elif [ -f "${SCRIPT_DIR}/server/package.json" ]; then
+  SERVER_DIR="${SCRIPT_DIR}/server"
 else
-  echo -e "  ${YELLOW}Node.js not found. Attempting auto-install...${NC}"
+  fail "Cannot find SwimEx EDGE files. Run this script from the project or release directory."
+fi
+
+# ── Ensure Node.js ──────────────────────────────────
+step "1/4" "Checking Node.js..."
+NODE_BIN=""
+
+if [ "$HAS_BUNDLED_NODE" = true ]; then
+  NODE_BIN="${SCRIPT_DIR}/node"
+  ok "Using bundled Node.js ($(${NODE_BIN} -v))"
+elif command -v node &>/dev/null; then
+  NODE_MAJOR=$(node -v | sed 's/v//' | cut -d. -f1)
+  if [ "$NODE_MAJOR" -ge "$NODE_MIN" ]; then
+    NODE_BIN="$(command -v node)"
+    ok "System Node.js $(node -v)"
+  fi
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  warn "Node.js ${NODE_MIN}+ not found — installing automatically..."
   if command -v apt-get &>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - 2>/dev/null
     sudo apt-get install -y nodejs 2>/dev/null
-  elif command -v yum &>/dev/null; then
+  elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash - 2>/dev/null
-    sudo yum install -y nodejs 2>/dev/null
+    sudo yum install -y nodejs 2>/dev/null || sudo dnf install -y nodejs 2>/dev/null
   elif command -v brew &>/dev/null; then
     brew install node 2>/dev/null
+  elif command -v pacman &>/dev/null; then
+    sudo pacman -Sy --noconfirm nodejs npm 2>/dev/null
+  elif command -v zypper &>/dev/null; then
+    sudo zypper install -y nodejs20 2>/dev/null
   else
-    fail "Cannot auto-install Node.js. Install v18+ manually from https://nodejs.org"
+    fail "Cannot auto-install Node.js. Install v${NODE_MIN}+ from https://nodejs.org"
   fi
-  ok "Node.js installed: $(node -v)"
+  NODE_BIN="$(command -v node)"
+  ok "Installed Node.js $(${NODE_BIN} -v)"
 fi
 
-# Check npm
-if ! command -v npm &>/dev/null; then
-  fail "npm not found. It should come with Node.js."
+# ── Build if needed ─────────────────────────────────
+step "2/4" "Preparing application..."
+cd "$SERVER_DIR"
+
+if [ "$HAS_PREBUILT" = true ]; then
+  ok "Pre-built distribution detected — skipping build"
+else
+  npm install --loglevel=error 2>&1 | tail -3
+  ok "Dependencies installed"
+  npx tsc 2>&1 || true
+  ok "TypeScript compiled"
 fi
-ok "npm $(npm -v)"
 
-# ─── Step 2: Install dependencies ────────────────────
-step 2 "Installing dependencies..."
-cd "${SERVER_DIR}"
-npm install --production=false --loglevel=error 2>&1 | tail -3
-ok "Dependencies installed"
+# Install production deps if node_modules missing (pre-built without bundled deps)
+if [ ! -d "${SERVER_DIR}/node_modules" ]; then
+  npm ci --production --loglevel=error 2>/dev/null || npm install --production --loglevel=error
+  ok "Production dependencies installed"
+fi
 
-# ─── Step 3: Build TypeScript ─────────────────────────
-step 3 "Building application..."
-npx tsc 2>&1 || true
-ok "TypeScript compiled"
+mkdir -p "${SERVER_DIR}/data"
+ok "Data directory ready"
 
-# ─── Step 4: Create data directory ────────────────────
-step 4 "Initializing data directory..."
-mkdir -p "${DATA_DIR}"
-ok "Data directory: ${DATA_DIR}"
+# ── Install as service OR run directly ──────────────
+if [[ "$MODE" == "--install" ]]; then
+  step "3/4" "Installing as system service..."
+  [ "$(id -u)" -ne 0 ] && fail "Service install requires root. Run: sudo bash setup.sh --install"
 
-# ─── Step 5: Start the server ─────────────────────────
-step 5 "Starting SwimEx EDGE Server..."
+  mkdir -p "$SVC_INSTALL_DIR" "$SVC_DATA_DIR" "$SVC_CONFIG_DIR"
 
-export HTTP_PORT="${HTTP_PORT:-3000}"
+  for item in dist public config templates package.json package-lock.json; do
+    [ -e "${SERVER_DIR}/${item}" ] && cp -r "${SERVER_DIR}/${item}" "${SVC_INSTALL_DIR}/"
+  done
+  [ -d "${SERVER_DIR}/node_modules" ] && cp -r "${SERVER_DIR}/node_modules" "${SVC_INSTALL_DIR}/"
+  if [ "$HAS_BUNDLED_NODE" = true ]; then
+    cp "${SCRIPT_DIR}/node" "${SVC_INSTALL_DIR}/node"
+    chmod +x "${SVC_INSTALL_DIR}/node"
+    NODE_EXEC="${SVC_INSTALL_DIR}/node"
+  else
+    NODE_EXEC="$NODE_BIN"
+  fi
+
+  if ! id -u "$SVC_USER" &>/dev/null; then
+    useradd --system --home-dir "$SVC_INSTALL_DIR" --shell /usr/sbin/nologin "$SVC_USER"
+  fi
+  chown -R "$SVC_USER":"$SVC_USER" "$SVC_INSTALL_DIR" "$SVC_DATA_DIR" "$SVC_CONFIG_DIR"
+
+  if [ -f /boot/config.txt ] && ! grep -q "^gpu_mem=" /boot/config.txt 2>/dev/null; then
+    echo "gpu_mem=16" >> /boot/config.txt
+    ok "RPi GPU memory set to 16MB (headless)"
+  fi
+
+  cat > "/etc/systemd/system/${SVC_NAME}.service" <<EOF
+[Unit]
+Description=SwimEx EDGE Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SVC_USER}
+Group=${SVC_USER}
+WorkingDirectory=${SVC_INSTALL_DIR}
+Environment=NODE_ENV=production
+Environment=HTTP_PORT=80
+Environment=MQTT_PORT=1883
+Environment=MODBUS_PORT=502
+Environment=DATA_DIR=${SVC_DATA_DIR}
+Environment=CONFIG_DIR=${SVC_CONFIG_DIR}
+ExecStart=${NODE_EXEC} dist/app/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=4096
+ProtectSystem=strict
+ReadWritePaths=${SVC_DATA_DIR} ${SVC_CONFIG_DIR}
+PrivateTmp=true
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable "${SVC_NAME}"
+  systemctl start "${SVC_NAME}"
+  ok "Service installed and started"
+
+  step "4/4" "Verifying..."
+  sleep 3
+  if systemctl is-active --quiet "${SVC_NAME}"; then
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+    echo ""
+    echo -e "${GREEN}${BOLD}  Setup complete!${NC}"
+    echo -e "  Web UI:   ${CYAN}http://${LOCAL_IP}${NC}"
+    echo -e "  Login:    admin / admin123"
+    echo -e "  Status:   sudo systemctl status ${SVC_NAME}"
+    echo -e "  Logs:     sudo journalctl -u ${SVC_NAME} -f"
+    echo -e "  Restart:  sudo systemctl restart ${SVC_NAME}"
+  else
+    warn "Service may not have started. Check: sudo journalctl -u ${SVC_NAME} -n 50"
+  fi
+  exit 0
+fi
+
+# ── Run directly (default) ──────────────────────────
+step "3/4" "Configuring..."
+
+export HTTP_PORT="${HTTP_PORT:-80}"
 export MQTT_PORT="${MQTT_PORT:-1883}"
-export MODBUS_PORT="${MODBUS_PORT:-5020}"
-export DATA_DIR="${DATA_DIR}"
+export MODBUS_PORT="${MODBUS_PORT:-502}"
+export DATA_DIR="${SERVER_DIR}/data"
 export CONFIG_DIR="${SERVER_DIR}/config"
 export ADMIN_USER="${ADMIN_USER:-admin}"
 export ADMIN_PASS="${ADMIN_PASS:-admin123}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
 export POOL_ID="${POOL_ID:-default}"
 
-# Use a non-privileged port if not root
 if [ "$HTTP_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then
-  export HTTP_PORT=3000
-  warn "Using port 3000 (port 80 requires root)"
+  export HTTP_PORT=3000; warn "Using port 3000 (port 80 requires root)"
 fi
-if [ "$MQTT_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then
-  export MQTT_PORT=11883
-fi
-if [ "$MODBUS_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then
-  export MODBUS_PORT=5020
-fi
+if [ "$MQTT_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then export MQTT_PORT=11883; fi
+if [ "$MODBUS_PORT" -lt 1024 ] && [ "$(id -u)" -ne 0 ]; then export MODBUS_PORT=5020; fi
 
-# Start server in background
-node dist/app/index.js &
+step "4/4" "Starting server..."
+"$NODE_BIN" "${SERVER_DIR}/dist/app/index.js" &
 SERVER_PID=$!
 
-# Wait for server to be ready
 echo -n "  Waiting for server"
-for i in {1..30}; do
+for i in $(seq 1 30); do
   if curl -sf "http://localhost:${HTTP_PORT}/api/health" >/dev/null 2>&1; then
-    echo ""
-    ok "Server is running (PID: ${SERVER_PID})"
-    break
+    echo ""; break
   fi
-  echo -n "."
-  sleep 1
+  echo -n "."; sleep 1
 done
 
-# Check if server started successfully
-if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
-  fail "Server failed to start. Check the logs above."
-fi
+if ! kill -0 "${SERVER_PID}" 2>/dev/null; then fail "Server failed to start."; fi
 
-# Get local IP
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
-
 echo ""
-echo -e "${GREEN}${BOLD}"
-echo "  ╔══════════════════════════════════════════════════════╗"
-echo "  ║                                                      ║"
-echo "  ║   ✅  SwimEx EDGE is running!                        ║"
-echo "  ║                                                      ║"
-echo -e "  ║   Open in browser:  ${CYAN}http://${LOCAL_IP}:${HTTP_PORT}${GREEN}      ║"
-echo "  ║                                                      ║"
-echo "  ║   Default accounts have been created.                 ║"
-echo "  ║                                                      ║"
-echo -e "  ║   ${YELLOW}⚠  CHANGE ALL DEFAULT PASSWORDS via the${GREEN}             ║"
-echo -e "  ║   ${YELLOW}   commissioning wizard on first login!${GREEN}              ║"
-echo "  ║                                                      ║"
-echo "  ║   Stop:  kill ${SERVER_PID}                                   ║"
-echo "  ║                                                      ║"
-echo "  ╚══════════════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-# Keep running in foreground if --foreground flag
-if [[ "${1:-}" == "--foreground" ]] || [[ "${1:-}" == "-f" ]]; then
-  wait "${SERVER_PID}"
-else
-  echo -e "Server running in background. To stop: ${BOLD}kill ${SERVER_PID}${NC}"
-  echo -e "To run in foreground next time: ${BOLD}bash setup.sh --foreground${NC}"
-fi
+echo -e "${GREEN}${BOLD}  Setup complete! Server running.${NC}"
+echo -e "  Web UI:  ${CYAN}http://${LOCAL_IP}:${HTTP_PORT}${NC}"
+echo -e "  Login:   admin / admin123"
+echo -e "  Stop:    kill ${SERVER_PID}"
+echo ""
+echo -e "  To install as a service:  ${BOLD}sudo bash setup.sh --install${NC}"
+echo -e "  To deploy with Docker:    ${BOLD}bash setup.sh --docker${NC}"
+echo ""
+wait "${SERVER_PID}"

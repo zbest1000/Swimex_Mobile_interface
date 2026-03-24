@@ -37,21 +37,17 @@ This topology isolates PLC traffic from client traffic and ensures reliable pool
 
 ### Linux Portable Package (Recommended)
 
-The easiest Linux option — no Node.js installation required. The release tarball includes a bundled Node.js binary.
+The easiest Linux option — no Node.js installation required. One command to set up and run:
 
 ```bash
-# Download
-wget https://github.com/<org>/swimex-edge/releases/download/<version>/swimex-edge-server-<version>-linux-x64.tar.gz
-
-# Extract and run
 tar -xzf swimex-edge-server-*-linux-x64.tar.gz
 cd swimex-edge-server-*-linux-x64
-./swimex-edge-server.sh
+bash setup.sh
 ```
 
-Works on any x64 Linux with glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
+To install as a persistent systemd service: `sudo bash setup.sh --install`
 
-To install as a systemd service: `sudo bash install-service.sh`
+Works on any x64 Linux with glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
 
 ### Supported Distributions (Package Install)
 
@@ -129,18 +125,12 @@ Service unit file location: `/etc/systemd/system/swimex-edge.service` or `/lib/s
 
 ### Portable EXE Package (Recommended)
 
-The easiest Windows option — no Node.js installation required. The release ZIP includes an embedded `node.exe`.
+The easiest Windows option — no Node.js installation required:
 
-1. Download `swimex-edge-server-<version>-windows-x64.zip` from the [Releases](https://github.com/<org>/swimex-edge/releases) page.
-2. Extract to a folder (e.g., `C:\SwimEx`).
-3. **Double-click `swimex-edge-server.bat`** to start the server.
-4. Open `http://localhost` in a browser.
-5. Default login: `admin` / `admin123`.
+1. Download and extract `swimex-edge-server-<version>-windows-x64.zip`
+2. **Double-click `setup.bat`**
 
-To install as a Windows Service (auto-start on boot):
-
-1. Right-click `install-service.ps1` → **Run with PowerShell** (as Administrator).
-2. Uses [NSSM](https://nssm.cc/) to register the service.
+The server starts automatically. Open `http://localhost` in a browser. Default login: `admin` / `admin123`.
 
 ### .msi Installer (Alternative)
 
@@ -185,26 +175,12 @@ Raspberry Pi OS (Lite or Desktop), 32-bit or 64-bit. Debian Bookworm or Bullseye
 ### Quick Install
 
 ```bash
-# Download the RPi release package
-wget https://github.com/<org>/swimex-edge/releases/download/<version>/swimex-edge-server-<version>-rpi-arm.tar.gz
-
-# Extract
 tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
 cd swimex-edge-server-*-rpi-arm
-
-# Run installer (installs Node.js if missing, creates systemd service)
-sudo bash installer/install.sh
+sudo bash setup.sh --install
 ```
 
-### What the Installer Does
-
-1. Checks/installs Node.js 18+ via NodeSource
-2. Copies application to `/opt/swimex-edge`
-3. Installs production npm dependencies
-4. Creates a dedicated `swimex` service user
-5. Reduces GPU memory to 16 MB (headless optimization)
-6. Registers and starts a hardened `systemd` service
-7. Grants `CAP_NET_BIND_SERVICE` for privileged ports (80, 502)
+The setup script automatically installs Node.js if missing, copies files to `/opt/swimex-edge`, creates a dedicated `swimex` service user, reduces GPU memory to 16 MB (headless), and registers a hardened systemd service with `CAP_NET_BIND_SERVICE`.
 
 ### Managing the Service
 

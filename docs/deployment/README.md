@@ -26,13 +26,13 @@ The SwimEx EDGE platform consists of two main components:
 
 The GitHub Actions `Build and Release` workflow produces platform-specific packages:
 
-| Artifact | Platform | Contents |
-|----------|----------|----------|
-| `-linux-x64.tar.gz` | Linux x64 | Self-contained package with embedded Node.js binary. Run `./swimex-edge-server.sh`. |
-| `.tar.gz` / `.zip` | Any OS (generic) | Compiled JS, assets, installer scripts. Requires Node.js 18+. |
-| `-windows-x64.zip` | Windows x64 | Self-contained package with embedded `node.exe`. Double-click `.bat` to start. |
-| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | Compiled JS, assets, RPi installer script. Installs as systemd service. |
-| Docker image | `linux/amd64`, `linux/arm64` | Multi-arch image pushed to GHCR or Docker Hub. |
+| Artifact | Platform | Setup |
+|----------|----------|-------|
+| `-linux-x64.tar.gz` | Linux x64 | `bash setup.sh` (self-contained, no Node.js needed) |
+| `.tar.gz` / `.zip` | Any OS (generic) | `bash setup.sh` (auto-installs Node.js if missing) |
+| `-windows-x64.zip` | Windows x64 | Double-click `setup.bat` (self-contained, no Node.js needed) |
+| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | `sudo bash setup.sh --install` (auto-installs Node.js, creates service) |
+| Docker image | `linux/amd64`, `linux/arm64` | `bash setup.sh --docker` or `docker run ...` |
 
 See [MANUAL.md](../../MANUAL.md) § 16 (Builds & Releases) for workflow details.
 
@@ -57,9 +57,9 @@ See [MANUAL.md](../../MANUAL.md) § 16 (Builds & Releases) for workflow details.
 
 ## Quick Start
 
-1. **Server**: Choose [native installation](SERVER_INSTALLATION.md) or [Docker](DOCKER_DEPLOYMENT.md).
-2. **Post-install**: Open `http://<server-ip>:<port>` in a browser to run the setup wizard.
-3. **Client**: Install the APK on Android tablets per [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md).
+1. **Server**: Download the release for your platform, extract, and run `bash setup.sh` (or `setup.bat` on Windows). One command does everything. Add `--install` for systemd service, `--docker` for Docker Compose.
+2. **Post-install**: Open the URL shown in the terminal.
+3. **Client**: Install the APK on Android tablets per [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md), or just open the URL in any browser.
 4. **Commissioning**: Complete the [COMMISSIONING_GUIDE.md](COMMISSIONING_GUIDE.md) for first-run setup.
 
 ## Hardware Requirements Summary
