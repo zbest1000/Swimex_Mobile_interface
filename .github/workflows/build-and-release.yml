@@ -12,6 +12,16 @@ on:
         required: false
         type: boolean
         default: true
+      build_windows:
+        description: 'Build Windows portable EXE package'
+        required: false
+        type: boolean
+        default: true
+      build_rpi:
+        description: 'Build Raspberry Pi ARM package'
+        required: false
+        type: boolean
+        default: true
       create_release:
         description: 'Create GitHub release with deployment artifacts'
         required: false
@@ -25,12 +35,16 @@ on:
 
 env:
   DOCKER_IMAGE_NAME: swimex/edge-server
+  NODE_VERSION: '20'
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  # ──────────────────────────────────────────────────────────
+  # Generic server build (Linux x64 tarball + zip)
+  # ──────────────────────────────────────────────────────────
   build-server:
     name: Build Server
     runs-on: ubuntu-latest
@@ -41,7 +55,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
 
@@ -52,6 +66,10 @@ jobs:
       - name: Build TypeScript
         working-directory: server
         run: npx tsc
+
+      - name: Run tests
+        working-directory: server
+        run: npm test
 
       - name: Create release archive
         run: |
@@ -78,6 +96,171 @@ jobs:
             swimex-edge-server-${{ inputs.release_tag }}.zip
           retention-days: 30
 
+  # ──────────────────────────────────────────────────────────
+  # Windows portable EXE package
+  # Bundles node.exe + compiled app + production deps
+  # ──────────────────────────────────────────────────────────
+  build-windows-exe:
+    name: Build Windows EXE
+    runs-on: windows-latest
+    if: ${{ inputs.build_windows }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: server
+        run: npx tsc
+
+      - name: Download portable Node.js
+        shell: pwsh
+        run: |
+          $nodeFullVersion = (node -v).TrimStart('v')
+          $url = "https://nodejs.org/dist/v${nodeFullVersion}/node-v${nodeFullVersion}-win-x64.zip"
+          Write-Host "Downloading Node.js $nodeFullVersion from $url"
+          Invoke-WebRequest -Uri $url -OutFile node-portable.zip
+          Expand-Archive -Path node-portable.zip -DestinationPath node-portable-extract
+          $extractedDir = Get-ChildItem node-portable-extract | Select-Object -First 1
+          Copy-Item "$($extractedDir.FullName)\node.exe" -Destination node.exe
+
+      - name: Install production dependencies
+        shell: pwsh
+        run: |
+          Set-Location server
+          Remove-Item -Recurse -Force node_modules
+          npm ci --production
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.release_tag }}"
+          $releaseDir = "swimex-edge-server-${tag}-windows-x64"
+          New-Item -ItemType Directory -Path $releaseDir -Force
+
+          Copy-Item node.exe "$releaseDir\node.exe"
+          Copy-Item -Recurse server\dist "$releaseDir\dist"
+          Copy-Item -Recurse server\node_modules "$releaseDir\node_modules"
+          Copy-Item -Recurse server\public "$releaseDir\public"
+          Copy-Item -Recurse server\config "$releaseDir\config"
+          Copy-Item -Recurse server\templates "$releaseDir\templates"
+          Copy-Item server\package.json "$releaseDir\package.json"
+
+          if (Test-Path server\installer\windows\install.ps1) {
+            Copy-Item server\installer\windows\install.ps1 "$releaseDir\install-service.ps1"
+          }
+          if (Test-Path MANUAL.md) { Copy-Item MANUAL.md "$releaseDir\MANUAL.md" }
+          if (Test-Path README.md) { Copy-Item README.md "$releaseDir\README.md" }
+
+          @"
+          @echo off
+          title SwimEx EDGE Server
+          echo ========================================
+          echo  SwimEx EDGE Server $tag
+          echo ========================================
+          echo.
+          echo Starting server...
+          echo Press Ctrl+C to stop.
+          echo.
+          set HTTP_PORT=80
+          set MODBUS_PORT=502
+          set MQTT_PORT=1883
+          set DATA_DIR=%~dp0data
+          set CONFIG_DIR=%~dp0config
+          "%~dp0node.exe" "%~dp0dist\app\index.js"
+          pause
+          "@ | Out-File -FilePath "$releaseDir\swimex-edge-server.bat" -Encoding ascii
+
+          @"
+          SwimEx EDGE Server $tag — Windows Quick Start
+          ==============================================
+          1. Double-click  swimex-edge-server.bat  to start the server.
+          2. Open http://localhost in your browser.
+          3. Default login: admin / admin123
+
+          To install as a Windows Service (auto-start on boot):
+            Right-click install-service.ps1 → Run with PowerShell (as Administrator)
+
+          To change the HTTP port, edit swimex-edge-server.bat and change HTTP_PORT.
+          "@ | Out-File -FilePath "$releaseDir\QUICKSTART.txt" -Encoding utf8
+
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath "swimex-edge-server-${tag}-windows-x64.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe-build
+          path: swimex-edge-server-${{ inputs.release_tag }}-windows-x64.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────
+  # Raspberry Pi ARM package
+  # Tarball with compiled JS + install script (npm install runs on-device)
+  # ──────────────────────────────────────────────────────────
+  build-rpi:
+    name: Build Raspberry Pi Package
+    runs-on: ubuntu-latest
+    if: ${{ inputs.build_rpi }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: server
+        run: npx tsc
+
+      - name: Create RPi release package
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          PKG_DIR="swimex-edge-server-${TAG}-rpi-arm"
+          mkdir -p "${PKG_DIR}"
+
+          cp -r server/dist "${PKG_DIR}/"
+          cp -r server/public "${PKG_DIR}/"
+          cp -r server/config "${PKG_DIR}/"
+          cp -r server/templates "${PKG_DIR}/"
+          cp server/package.json server/package-lock.json "${PKG_DIR}/"
+
+          mkdir -p "${PKG_DIR}/installer"
+          cp server/installer/rpi/install.sh "${PKG_DIR}/installer/"
+          chmod +x "${PKG_DIR}/installer/install.sh"
+
+          cp README.md "${PKG_DIR}/" 2>/dev/null || true
+          cp MANUAL.md "${PKG_DIR}/" 2>/dev/null || true
+
+          tar -czf "swimex-edge-server-${TAG}-rpi-arm.tar.gz" "${PKG_DIR}"
+
+      - name: Upload RPi artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpi-build
+          path: swimex-edge-server-${{ inputs.release_tag }}-rpi-arm.tar.gz
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────
+  # Docker image (multi-arch: amd64 + arm64)
+  # ──────────────────────────────────────────────────────────
   build-docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
@@ -86,6 +269,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU (for ARM cross-build)
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -127,19 +313,40 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
+  # ──────────────────────────────────────────────────────────
+  # GitHub Release — collects all artifacts
+  # ──────────────────────────────────────────────────────────
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    if: ${{ inputs.create_release }}
-    needs: [build-server]
+    needs: [build-server, build-windows-exe, build-rpi]
+    if: ${{ always() && inputs.create_release && needs.build-server.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - name: Download server build
         uses: actions/download-artifact@v4
         with:
           name: server-build
+          path: release-artifacts/
+
+      - name: Download Windows build
+        if: ${{ inputs.build_windows && needs.build-windows-exe.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe-build
+          path: release-artifacts/
+
+      - name: Download RPi build
+        if: ${{ inputs.build_rpi && needs.build-rpi.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: rpi-build
+          path: release-artifacts/
+
+      - name: List release artifacts
+        run: ls -lhR release-artifacts/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -149,24 +356,32 @@ jobs:
           draft: false
           prerelease: ${{ contains(inputs.release_tag, 'rc') || contains(inputs.release_tag, 'beta') || contains(inputs.release_tag, 'alpha') }}
           generate_release_notes: true
-          files: |
-            swimex-edge-server-${{ inputs.release_tag }}.tar.gz
-            swimex-edge-server-${{ inputs.release_tag }}.zip
+          files: release-artifacts/*
           body: |
             ## SwimEx EDGE Server ${{ inputs.release_tag }}
 
-            ### Deployment
+            ### Download Options
 
-            **Docker:**
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | **Linux (generic)** | `swimex-edge-server-${{ inputs.release_tag }}.tar.gz` | Requires Node.js 18+. Run `installer/linux/install.sh`. |
+            | **Windows x64** | `swimex-edge-server-${{ inputs.release_tag }}-windows-x64.zip` | Self-contained with Node.js. Double-click `swimex-edge-server.bat`. |
+            | **Raspberry Pi** | `swimex-edge-server-${{ inputs.release_tag }}-rpi-arm.tar.gz` | For RPi 3/4/5 (ARM). Run `installer/install.sh`. |
+            | **Docker** | See below | Multi-arch (amd64 + arm64). |
+
+            ### Docker
+
             ```bash
             docker pull ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
+            docker run -d -p 80:80 -p 502:502 -v swimex-data:/data \
+              ${{ inputs.docker_registry }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.release_tag }}
             ```
 
-            **Manual:**
-            1. Download the release archive
-            2. Extract and run `server/installer/linux/install.sh`
-            3. Or use Docker Compose: `cd server/docker && docker-compose up -d`
+            ### Quick Start
 
-            ### Configuration
-            - Export server config from Admin Panel → Settings → Export Config
-            - Import config on new deployments for quick setup
+            1. Download the archive for your platform
+            2. Extract and follow the included QUICKSTART or run the installer script
+            3. Open `http://<server-ip>` in a browser
+            4. Default login: **admin** / **admin123**
+
+            See [MANUAL.md](MANUAL.md) for full setup and deployment instructions.
