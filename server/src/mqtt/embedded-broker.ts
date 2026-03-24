@@ -97,7 +97,7 @@ export class EmbeddedMqttBroker {
       if (match) {
         callback(null, true);
       } else {
-        log.warn(`Auth rejected for user "${username}"`);
+        log.security(`MQTT auth rejected for user "${username}"`);
         const err = new Error('Bad credentials') as AuthenticateError;
         err.returnCode = 4;
         callback(err, false);

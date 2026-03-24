@@ -1,6 +1,6 @@
 import http from 'http';
 import { config } from '../utils/config';
-import { createLogger, setLogLevel, LogLevel } from '../utils/logger';
+import { createLogger, setLogLevel, configureFileLogging, closeLogger, LogLevel } from '../utils/logger';
 import { initDatabase, closeDatabase } from '../database/connection';
 import { runMigrations } from '../database/migrate';
 import { createApp } from '../http/server';
@@ -20,6 +20,14 @@ const log = createLogger('app');
 
 async function main(): Promise<void> {
   setLogLevel(config.logLevel as LogLevel);
+  if (config.logFile) {
+    configureFileLogging({
+      filePath: config.logFile,
+      format: config.logFormat,
+      maxSizeMB: config.logMaxSizeMB,
+      maxFiles: config.logMaxFiles,
+    });
+  }
   log.info('========================================');
   log.info(' SwimEx EDGE Server v1.0.0');
   log.info('========================================');
@@ -121,6 +129,7 @@ async function main(): Promise<void> {
     await modbusClient.disconnect();
     closeDatabase();
     log.info('Shutdown complete');
+    closeLogger();
     process.exit(0);
   };
 

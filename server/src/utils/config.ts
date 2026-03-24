@@ -17,6 +17,10 @@ export interface ServerConfig {
   defaultAdminPass: string;
   poolId: string;
   logLevel: string;
+  logFile: string;
+  logFormat: 'text' | 'json';
+  logMaxSizeMB: number;
+  logMaxFiles: number;
   simulatorMode: boolean;
   useEmbeddedBroker: boolean;
   disablePlcChecks: boolean;
@@ -59,6 +63,10 @@ export function loadConfig(): ServerConfig {
     defaultAdminPass: env('ADMIN_PASS', ''),
     poolId: env('POOL_ID', 'default'),
     logLevel: env('LOG_LEVEL', 'info'),
+    logFile: env('LOG_FILE', ''),
+    logFormat: env('LOG_FORMAT', 'text') as 'text' | 'json',
+    logMaxSizeMB: parseInt(env('LOG_MAX_SIZE_MB', '10'), 10),
+    logMaxFiles: parseInt(env('LOG_MAX_FILES', '5'), 10),
     simulatorMode: env('SIMULATOR_MODE', 'false') === 'true' || env('SIMULATOR_MODE', '0') === '1',
     useEmbeddedBroker: env('MQTT_EXTERNAL', 'false') !== 'true',
     disablePlcChecks: env('DISABLE_PLC_CHECKS', 'false') === 'true',

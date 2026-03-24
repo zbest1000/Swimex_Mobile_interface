@@ -222,7 +222,7 @@ export class ModbusTcpServer {
       const allowed = allowedIps.split(',').map(s => s.trim());
       const remote = socket.remoteAddress?.replace('::ffff:', '') ?? '';
       if (!allowed.includes(remote)) {
-        log.warn(`Modbus: rejected connection from unauthorized IP ${remote}`);
+        log.security(`Modbus: rejected connection from unauthorized IP ${remote}`);
         socket.destroy();
         return;
       }

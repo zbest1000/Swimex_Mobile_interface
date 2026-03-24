@@ -111,12 +111,14 @@ export async function login(username: string, password: string, sourceIp?: strin
   const row = db.prepare('SELECT id, username, display_name, email, role, is_active, created_at, last_login_at, password_hash FROM users WHERE username = ? AND is_active = 1').get(username) as Record<string, unknown> | undefined;
 
   if (!row) {
+    log.security(`Login failed: unknown user "${username}"`, { sourceIp });
     auditLog('LOGIN_FAILED', null, 'auth', null, { username, reason: 'user not found', sourceIp });
     throw new AuthError('Invalid credentials');
   }
 
   const valid = await verifyPassword(row.password_hash as string, password);
   if (!valid) {
+    log.security(`Login failed: wrong password for "${username}"`, { sourceIp });
     auditLog('LOGIN_FAILED', row.id as string, 'auth', null, { username, reason: 'wrong password', sourceIp });
     throw new AuthError('Invalid credentials');
   }
@@ -131,7 +133,7 @@ export async function login(username: string, password: string, sourceIp?: strin
   db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(sessionId, user.id, expiresAt);
 
   auditLog('LOGIN_SUCCESS', user.id, 'auth', user.id, { sourceIp });
-  log.info(`User logged in: ${username}`);
+  log.security(`Login success: "${username}" (${user.role})`, { sourceIp });
 
   return { user, token };
 }
@@ -183,6 +185,7 @@ export async function updatePassword(userId: string, newPassword: string, actorI
   const hash = await hashPassword(newPassword);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
   db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
+  log.security(`Password changed for user ${userId}`, { actorId: actorId ?? userId });
   auditLog('PASSWORD_CHANGED', actorId ?? userId, 'user', userId, {});
 }
 
@@ -190,6 +193,7 @@ export function disableUser(userId: string, actorId: string): void {
   const db = getDb();
   db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId);
   db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
+  log.security(`User disabled: ${userId}`, { actorId });
   auditLog('USER_DISABLED', actorId, 'user', userId, {});
 }
 
@@ -202,6 +206,7 @@ export function enableUser(userId: string, actorId: string): void {
 export function deleteUser(userId: string, actorId: string): void {
   const db = getDb();
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  log.security(`User deleted: ${userId}`, { actorId });
   auditLog('USER_DELETED', actorId, 'user', userId, {});
 }
 
@@ -229,7 +234,7 @@ export async function setCommissioningCode(org: CommissioningOrg, code: string):
   }
 
   auditLog('COMMISSIONING_CODE_SET', null, 'commissioning', org, { organization: org });
-  log.info(`Commissioning code set for ${org}`);
+  log.security(`Commissioning code set for ${org}`);
 }
 
 export async function resetSuperAdmin(
@@ -268,6 +273,7 @@ export async function resetSuperAdmin(
       WHERE organization = ?
     `).run(attempts, lockoutUntil, org);
 
+    log.security(`Super admin reset FAILED: invalid code for ${org} (attempt ${attempts})`, { sourceIp });
     auditLog('SUPER_ADMIN_RESET_FAILED', null, 'commissioning', org, { organization: org, sourceIp, attempts });
     throw new AuthError('Invalid commissioning code');
   }
@@ -285,7 +291,7 @@ export async function resetSuperAdmin(
   // Create new Super Admin
   const user = await createUser(newUsername, newPassword, newUsername, UserRole.SUPER_ADMINISTRATOR);
   auditLog('SUPER_ADMIN_RESET_SUCCESS', user.id, 'commissioning', org, { organization: org, sourceIp });
-  log.info(`Super Admin account reset via ${org} commissioning code`);
+  log.security(`Super admin reset SUCCESS via ${org} commissioning code`, { sourceIp });
 
   return user;
 }

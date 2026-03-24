@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -41,9 +42,12 @@ export function createApp(): express.Application {
     next();
   });
 
-  // Request logging
-  app.use((req: Request, _res: Response, next: NextFunction) => {
-    log.debug(`${req.method} ${req.path}`);
+  // Request logging with correlation ID
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+    res.setHeader('X-Request-ID', requestId);
+    (req as any).requestId = requestId;
+    log.debug(`${req.method} ${req.path}`, { requestId, ip: req.ip });
     next();
   });
 

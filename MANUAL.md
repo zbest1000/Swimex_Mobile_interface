@@ -36,9 +36,10 @@ This manual covers everything you need to know to install, set up, and use the S
     - [Communication Setup](#133-communication-setup)
 14. [Android Tablet Setup](#14-android-tablet-setup)
 15. [Safety Features](#15-safety-features)
-16. [Builds & Releases](#16-builds--releases)
-17. [Troubleshooting](#17-troubleshooting)
-18. [Frequently Asked Questions](#18-frequently-asked-questions)
+16. [Logging & Monitoring](#16-logging--monitoring)
+17. [Builds & Releases](#17-builds--releases)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Frequently Asked Questions](#19-frequently-asked-questions)
 
 ---
 
@@ -177,7 +178,11 @@ The image is multi-arch (amd64 + arm64). Environment variables:
 | `JWT_SECRET` | *(random)* | JWT signing secret — set for persistent sessions |
 | `SIMULATOR_MODE` | `false` | Enable PLC simulator for testing |
 | `DATA_DIR` | `/data` | Persistent data volume |
-| `LOG_LEVEL` | `info` | Log verbosity |
+| `LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `security`, `warn`, `error`, `fatal` |
+| `LOG_FILE` | *(none)* | Path to log file (enables file logging with rotation) |
+| `LOG_FORMAT` | `text` | Log file format: `text` or `json` (structured) |
+| `LOG_MAX_SIZE_MB` | `10` | Max log file size before rotation |
+| `LOG_MAX_FILES` | `5` | Number of rotated log files to keep |
 
 All passwords are hashed with Argon2id before storage. Override defaults with `ADMIN_PASS` / `SUPERADMIN_PASS` env vars on first run.
 
@@ -788,7 +793,100 @@ If a device is not registered in the Admin Panel, it can see the pool status but
 
 ---
 
-## 16. Builds & Releases
+## 16. Logging & Monitoring
+
+The EDGE Server has a multi-level logging system with structured output, file rotation, and a dedicated security log level for audit-relevant events.
+
+### Log Levels
+
+| Level | Purpose | Examples |
+|-------|---------|---------|
+| `debug` | Verbose development output | HTTP request paths, tag value changes, MQTT subscriptions |
+| `info` | Normal operational events | Server startup, user created, config loaded |
+| `security` | Authentication and authorization events | Login success/failure, password changes, session revocation, unauthorized access |
+| `warn` | Non-fatal issues | PLC heartbeat lost, MQTT reconnect, port conflict |
+| `error` | Recoverable failures | Database query error, Modbus frame error |
+| `fatal` | Unrecoverable failures | Startup crash, critical subsystem failure |
+
+Set the minimum level with `LOG_LEVEL`. For example, `LOG_LEVEL=security` shows security, warn, error, and fatal messages.
+
+### Console Output
+
+Logs always go to stdout/stderr (captured by systemd, Docker, or the terminal). Colorized on TTY, plain text in pipes.
+
+### File Logging
+
+Enable persistent log files with rotation:
+
+```bash
+LOG_FILE=/var/log/swimex-edge/server.log LOG_FORMAT=json LOG_MAX_SIZE_MB=10 LOG_MAX_FILES=5 bash setup.sh
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_FILE` | *(none)* | Path to log file — enables file logging |
+| `LOG_FORMAT` | `text` | `text` (human readable) or `json` (structured, machine parseable) |
+| `LOG_MAX_SIZE_MB` | `10` | Maximum file size before rotation |
+| `LOG_MAX_FILES` | `5` | Number of rotated files to keep |
+
+Log files are created with `0640` permissions. The data directory is created with `0700`.
+
+### Structured JSON Format
+
+When `LOG_FORMAT=json`, each log line is a JSON object:
+
+```json
+{
+  "timestamp": "2026-03-24T12:56:40.379Z",
+  "level": "security",
+  "module": "auth",
+  "message": "Login failed: wrong password for \"admin\"",
+  "data": { "sourceIp": "192.168.1.50" }
+}
+```
+
+Fields: `timestamp`, `level`, `module`, `message`, optional `data`, `requestId`, `userId`, `ip`.
+
+### Security Events Logged
+
+| Event | Level | Module |
+|-------|-------|--------|
+| Login success | `security` | `auth` |
+| Login failure (wrong password) | `security` | `auth` |
+| Login failure (unknown user) | `security` | `auth` |
+| Password changed | `security` | `auth` |
+| User disabled / deleted | `security` | `auth` |
+| Session revoked (expired/used) | `security` | `auth-middleware` |
+| Commissioning code set | `security` | `auth` |
+| Super admin reset (success/fail) | `security` | `auth` |
+| MQTT auth rejected | `security` | `mqtt-broker-embedded` |
+| Modbus unauthorized IP rejected | `security` | `modbus-server` |
+
+### Request Correlation
+
+Every HTTP request gets an `X-Request-ID` header (auto-generated or forwarded from `X-Request-ID` in the incoming request). This ID appears in log entries for tracing.
+
+### Viewing Logs
+
+```bash
+# Live console (foreground)
+bash setup.sh
+
+# systemd service
+sudo journalctl -u swimex-edge -f
+sudo journalctl -u swimex-edge --since "1 hour ago"
+sudo journalctl -u swimex-edge -p warning    # warn and above
+
+# Docker
+docker logs -f swimex-edge
+
+# Log file (grep for security events)
+grep '"security"' /var/log/swimex-edge/server.log
+```
+
+---
+
+## 17. Builds & Releases
 
 SwimEx EDGE uses GitHub Actions for automated builds. Every release produces multiple artifacts for different platforms.
 
@@ -835,7 +933,7 @@ Every push and pull request to `main` runs the CI workflow which:
 
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 ### "Cannot connect to server"
 
@@ -894,7 +992,7 @@ Every push and pull request to `main` runs the CI workflow which:
 
 ---
 
-## 18. Frequently Asked Questions
+## 19. Frequently Asked Questions
 
 **Q: Can I use this without the Android tablet?**
 A: Yes! Open the server URL in any web browser on the same network. You get the full interface. The Android app just adds kiosk mode (locks the tablet to the SwimEx app).
