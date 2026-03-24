@@ -76,8 +76,7 @@ services:
       - swimex-data:/data
       - ./config:/config:ro
     environment:
-      - ADMIN_USER=admin
-      - ADMIN_PASS=ChangeMe123!
+      - ADMIN_PASS=${ADMIN_PASS}    # Set in .env file or shell
       - MQTT_PORT=1883
       - HTTP_PORT=80
       - LOG_LEVEL=info

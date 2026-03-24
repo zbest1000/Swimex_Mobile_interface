@@ -2,6 +2,7 @@ import { getDb } from '../database/connection';
 import { createLogger } from '../utils/logger';
 import { auditLog } from '../auth/audit';
 import { ValidationError } from '../utils/errors';
+import { encrypt, decrypt } from '../utils/crypto';
 
 const log = createLogger('config-service');
 
@@ -21,9 +22,11 @@ export interface ServerConfigExport {
 export function exportConfig(): ServerConfigExport {
   const db = getDb();
 
+  const SENSITIVE_KEYS = new Set(['wifi_password', 'jwt_secret']);
   const system: Record<string, string> = {};
   const sysRows = db.prepare('SELECT key, value FROM system_config').all() as { key: string; value: string }[];
   for (const row of sysRows) {
+    if (SENSITIVE_KEYS.has(row.key)) continue;
     system[row.key] = row.value;
   }
 
@@ -59,7 +62,12 @@ export function exportConfig(): ServerConfigExport {
   try {
     const wifiRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
     if (wifiRow) {
-      wifiConfig = JSON.parse(wifiRow.value);
+      const parsed = JSON.parse(wifiRow.value);
+      if (parsed.password) {
+        parsed.password_encrypted = encrypt(parsed.password);
+        delete parsed.password;
+      }
+      wifiConfig = parsed;
     }
   } catch { /* no wifi config yet */ }
 
@@ -228,7 +236,17 @@ export function importConfig(
 
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(data.wifiConfig));
+        const wifiData = { ...data.wifiConfig };
+        if (wifiData.password_encrypted && !wifiData.password) {
+          const decrypted = decrypt(wifiData.password_encrypted as string);
+          if (decrypted) {
+            wifiData.password = decrypted;
+          } else {
+            errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+          }
+          delete wifiData.password_encrypted;
+        }
+        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
         imported.push('wifiConfig');
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);

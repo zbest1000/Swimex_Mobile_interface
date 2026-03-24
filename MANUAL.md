@@ -11,29 +11,35 @@ This manual covers everything you need to know to install, set up, and use the S
 1. [What is SwimEx EDGE?](#1-what-is-swimex-edge)
 2. [What You Need (Requirements)](#2-what-you-need)
 3. [Installation](#3-installation)
-   - [Option A: Quick Install (Recommended)](#option-a-quick-install)
-   - [Option B: Docker Install](#option-b-docker-install)
-   - [Option C: Windows Install](#option-c-windows-install)
+   - [Linux](#linux)
+   - [Windows](#windows)
+   - [Docker](#docker)
+   - [Raspberry Pi](#raspberry-pi)
+   - [Running as a Service (Auto-Start After Reboot)](#running-as-a-service-auto-start-after-reboot)
 4. [First-Time Setup](#4-first-time-setup)
 5. [Logging In](#5-logging-in)
-6. [Home Screen](#6-home-screen)
-7. [Workout Modes](#7-workout-modes)
-   - [Quick Start](#71-quick-start)
-   - [Custom Programs](#72-custom-programs)
-   - [Interval Training](#73-interval-training)
-   - [Distance Presets](#74-distance-presets)
-   - [Sprint Presets](#75-sprint-presets)
-8. [During a Workout](#8-during-a-workout)
-9. [Your Profile](#9-your-profile)
-10. [Changing Themes](#10-changing-themes)
-11. [Administration Guide](#11-administration-guide)
-    - [User Management](#111-user-management)
-    - [Device Registration](#112-device-registration)
-    - [Communication Setup](#113-communication-setup)
-12. [Android Tablet Setup](#12-android-tablet-setup)
-13. [Safety Features](#13-safety-features)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Frequently Asked Questions](#15-faq)
+6. [EDGE Server Access](#6-edge-server-access)
+7. [EDGE Client Access](#7-edge-client-access)
+8. [Home Screen](#8-home-screen)
+9. [Workout Modes](#9-workout-modes)
+   - [Quick Start](#91-quick-start)
+   - [Custom Programs](#92-custom-programs)
+   - [Interval Training](#93-interval-training)
+   - [Distance Presets](#94-distance-presets)
+   - [Sprint Presets](#95-sprint-presets)
+10. [During a Workout](#10-during-a-workout)
+11. [Your Profile](#11-your-profile)
+12. [Changing Themes](#12-changing-themes)
+13. [Administration Guide](#13-administration-guide)
+    - [User Management](#131-user-management)
+    - [Device Registration](#132-device-registration)
+    - [Communication Setup](#133-communication-setup)
+14. [Android Tablet Setup](#14-android-tablet-setup)
+15. [Safety Features](#15-safety-features)
+16. [Logging & Monitoring](#16-logging--monitoring)
+17. [Builds & Releases](#17-builds--releases)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Frequently Asked Questions](#19-frequently-asked-questions)
 
 ---
 
@@ -75,103 +81,257 @@ You need ONE of these:
 
 ## 3. Installation
 
-### Option A: Quick Install
+Every platform uses **one command**. The automated `setup.sh` (or `setup.bat` on Windows) handles everything: detecting the environment, installing dependencies if needed, building, and starting the server.
 
-This is the easiest method. It works on Mac, Linux, and Windows (with Git Bash or WSL).
+### Quick Reference
 
-#### Step 1: Install Node.js (if not already installed)
+| Platform | Download | One Command |
+|----------|----------|-------------|
+| **Linux x64** | `-linux-x64.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+| **Any Linux / Mac** | `.tar.gz` | `tar -xzf *.tar.gz && cd */ && bash setup.sh` |
+| **Windows** | `-windows-x64.zip` | Extract ZIP → double-click `setup.bat` |
+| **Raspberry Pi** | `-rpi-arm.tar.gz` | `tar -xzf *.tar.gz && cd */ && sudo bash setup.sh --install` |
+| **Docker** | any release or repo | `bash setup.sh --docker` |
 
-1. Go to **https://nodejs.org**
-2. Download the **LTS** version (the green button)
-3. Run the installer — click Next through all screens
-4. Restart your terminal/command prompt after installing
-
-To verify it worked, open a terminal and type:
-```
-node --version
-```
-You should see something like `v20.11.0`. The number must be 18 or higher.
-
-#### Step 2: Download SwimEx EDGE
-
-Download the SwimEx EDGE files to your computer. If you received a ZIP file, unzip it to a folder you'll remember (for example, `C:\SwimEx` or `~/SwimEx`).
-
-#### Step 3: Run the Setup
-
-1. Open a terminal (Command Prompt on Windows, Terminal on Mac/Linux)
-2. Navigate to the SwimEx EDGE folder:
-   ```
-   cd path/to/swimex-edge
-   ```
-3. Run the setup script:
-   ```
-   bash setup.sh
-   ```
-4. Wait about 30–60 seconds. You'll see a progress display.
-5. When you see the green **"SwimEx EDGE is running!"** message, you're done!
-
-The screen will show you a URL like `http://192.168.1.100:3000` — open this in your browser.
+After setup completes, open the URL shown on screen (e.g., `http://192.168.1.100`). Default login: **admin** / **admin123**. Passwords are stored as Argon2id hashes — plaintext is never saved to disk.
 
 ---
 
-### Option B: Docker Install
+### Linux
 
-If you have Docker installed:
+Download the release for your architecture from the [Releases](../../releases) page.
 
-1. Open a terminal in the SwimEx EDGE folder
-2. Run:
-   ```
-   bash setup-docker.sh
-   ```
-3. Wait for the containers to build and start (about 2–3 minutes on first run)
-4. Open `http://your-server-ip` in a browser
+**Linux x64 (self-contained — recommended for most servers):**
+```bash
+tar -xzf swimex-edge-server-*-linux-x64.tar.gz
+cd swimex-edge-server-*-linux-x64
+bash setup.sh
+```
+
+**Generic (any Linux / Mac with Node.js — the script auto-installs Node if missing):**
+```bash
+tar -xzf swimex-edge-server-*.tar.gz
+cd swimex-edge-server-*/server   # or project root if cloned from git
+bash setup.sh
+```
+
+The setup script automatically:
+- Detects if a bundled Node.js binary is present, or installs Node.js 18+ (apt, yum, dnf, brew, pacman, zypper)
+- Installs production dependencies
+- Builds TypeScript if running from source
+- Starts the server and waits for the health check
+- Shows the URL when ready
+
+**Compatibility:** The Linux x64 package requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
+
+**To install as a persistent systemd service (auto-start on boot):**
+```bash
+sudo bash setup.sh --install
+```
+
+**To manage the service after installation:**
+```bash
+sudo systemctl status swimex-edge
+sudo systemctl restart swimex-edge
+sudo journalctl -u swimex-edge -f
+```
 
 ---
 
-### Option C: Windows Install
+### Windows
 
-1. Install Node.js from https://nodejs.org (LTS version)
-2. Open **Command Prompt** (search for "cmd" in the Start menu)
-3. Navigate to the SwimEx EDGE folder:
+1. Download `swimex-edge-server-<version>-windows-x64.zip` from the [Releases](../../releases) page
+2. Extract the ZIP (e.g., to `C:\SwimEx`)
+3. **Double-click `setup.bat`**
+
+That's it. The server starts, the console shows the URL. No Node.js install needed — the portable `node.exe` is included.
+
+---
+
+### Docker
+
+```bash
+bash setup.sh --docker
+```
+
+Or, using a pre-built image directly:
+
+```bash
+docker run -d --name swimex-edge \
+  -p 80:80 -p 502:502 -p 1883:1883 \
+  -v swimex-data:/data \
+  ghcr.io/<org>/swimex/edge-server:latest
+```
+
+The image is multi-arch (amd64 + arm64). Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTP_PORT` | `80` | Web UI and API port |
+| `MQTT_PORT` | `1883` | MQTT broker port |
+| `MODBUS_PORT` | `502` | Modbus TCP port |
+| `ADMIN_USER` | `admin` | Initial admin username (first run only) |
+| `ADMIN_PASS` | `admin123` | Override default admin password (first run only) |
+| `SUPERADMIN_PASS` | `superadmin` | Override default superadmin password (first run only) |
+| `MQTT_USER` | `edge-server` | MQTT broker username |
+| `MQTT_PASS` | *(empty)* | MQTT broker password |
+| `JWT_SECRET` | *(random)* | JWT signing secret — set for persistent sessions |
+| `SIMULATOR_MODE` | `false` | Enable PLC simulator for testing |
+| `DATA_DIR` | `/data` | Persistent data volume |
+| `LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `security`, `warn`, `error`, `fatal` |
+| `LOG_FILE` | *(none)* | Path to log file (enables file logging with rotation) |
+| `LOG_FORMAT` | `text` | Log file format: `text` or `json` (structured) |
+| `LOG_MAX_SIZE_MB` | `10` | Max log file size before rotation |
+| `LOG_MAX_FILES` | `5` | Number of rotated log files to keep |
+
+All passwords are hashed with Argon2id before storage. Override defaults with `ADMIN_PASS` / `SUPERADMIN_PASS` env vars on first run.
+
+---
+
+### Raspberry Pi
+
+```bash
+tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
+cd swimex-edge-server-*-rpi-arm
+sudo bash setup.sh --install
+```
+
+The setup script automatically installs Node.js if needed, creates a dedicated system user, sets GPU memory to 16 MB for headless mode, and registers a hardened systemd service.
+
+Tested on RPi 3B+, 4B, and 5 (Raspberry Pi OS Lite/Desktop, 32-bit and 64-bit).
+
+**Headless setup (no monitor):**
+1. Flash Raspberry Pi OS Lite using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) — configure Wi-Fi, SSH, and hostname in the imager
+2. SSH in: `ssh pi@swimex-edge.local`
+3. Transfer and extract the package, run `sudo bash setup.sh --install`
+4. Access the Web UI from any browser on the network
+
+---
+
+### Changing Ports
+
+On any platform, set environment variables before running:
+```bash
+HTTP_PORT=8080 MODBUS_PORT=5020 bash setup.sh
+```
+
+On Windows, edit `setup.bat` and change the `set HTTP_PORT=80` line.
+
+---
+
+### Running as a Service (Auto-Start After Reboot)
+
+To ensure the server starts automatically after a power cycle or reboot, install it as a system service.
+
+#### Linux (systemd) — All Distributions
+
+```bash
+sudo bash setup.sh --install
+```
+
+This registers `swimex-edge` as a systemd service that:
+- Starts automatically on boot
+- Restarts automatically if it crashes (5-second delay)
+- Runs as a dedicated `swimex` service user (not root)
+- Binds to privileged ports (80, 502) via `CAP_NET_BIND_SERVICE`
+- Logs to the system journal
+
+**Manage the service:**
+
+| Action | Command |
+|--------|---------|
+| Check status | `sudo systemctl status swimex-edge` |
+| View logs (live) | `sudo journalctl -u swimex-edge -f` |
+| Restart | `sudo systemctl restart swimex-edge` |
+| Stop | `sudo systemctl stop swimex-edge` |
+| Disable auto-start | `sudo systemctl disable swimex-edge` |
+| Re-enable auto-start | `sudo systemctl enable swimex-edge` |
+
+**Configuration:** Edit environment variables in the service unit file:
+```bash
+sudo systemctl edit swimex-edge
+```
+Add overrides like:
+```ini
+[Service]
+Environment=HTTP_PORT=8080
+Environment=LOG_LEVEL=debug
+```
+Then restart: `sudo systemctl restart swimex-edge`
+
+#### Windows — Run as a Windows Service
+
+1. Download [NSSM](https://nssm.cc/download) (the Non-Sucking Service Manager)
+2. Open a **Command Prompt as Administrator**
+3. Install the service:
+   ```cmd
+   nssm install SwimExEDGE "C:\SwimEx\node.exe" "C:\SwimEx\dist\app\index.js"
+   nssm set SwimExEDGE AppDirectory "C:\SwimEx"
+   nssm set SwimExEDGE AppEnvironmentExtra HTTP_PORT=80 MODBUS_PORT=502 DATA_DIR=C:\SwimEx\data
+   nssm start SwimExEDGE
    ```
-   cd C:\path\to\swimex-edge\server
-   ```
-4. Install dependencies:
-   ```
-   npm install
-   ```
-5. Build the application:
-   ```
-   npm run build
-   ```
-6. Start the server:
-   ```
-   set HTTP_PORT=3000
-   set ADMIN_USER=admin
-   set ADMIN_PASS=admin123
-   npm start
-   ```
-7. Open `http://localhost:3000` in your browser
+4. The service starts automatically after every reboot
+
+**Manage the service:**
+
+| Action | Command |
+|--------|---------|
+| Check status | `sc query SwimExEDGE` or `services.msc` |
+| Stop | `nssm stop SwimExEDGE` |
+| Restart | `nssm restart SwimExEDGE` |
+| Remove | `nssm remove SwimExEDGE confirm` |
+| View logs | Check Windows Event Viewer |
+
+#### Docker — Restart Policy
+
+Docker Compose already includes `restart: unless-stopped`. To ensure Docker itself starts on boot:
+
+```bash
+sudo systemctl enable docker
+```
+
+Manage containers:
+
+| Action | Command |
+|--------|---------|
+| Start | `docker compose up -d` |
+| Stop | `docker compose down` |
+| View logs | `docker compose logs -f` |
+| Restart | `docker compose restart` |
+
+#### Raspberry Pi — Identical to Linux
+
+The RPi installer (`sudo bash setup.sh --install`) uses the same systemd service with additional optimizations (reduced GPU memory, headless mode). The service starts on every boot automatically.
 
 ---
 
 ## 4. First-Time Setup
 
-When you first open SwimEx EDGE in your browser, the system has already created default accounts for you:
+On first run, the server creates three default accounts. Passwords are hashed with **Argon2id** before storage — plaintext is never written to the database, logs, or filesystem.
 
-| Who | Username | Password | What They Can Do |
-|-----|----------|----------|------------------|
-| Super Administrator | `superadmin` | `superadmin` | Everything (hidden advanced settings) |
+| Who | Username | Default Password | Role |
+|-----|----------|-----------------|------|
+| Super Administrator | `superadmin` | `superadmin` | Full system access, hidden settings |
 | Administrator | `admin` | `admin123` | Manage users, devices, pool settings |
-| Demo Swimmer | `swimmer` | `swimmer` | Run workouts, save programs |
+| Demo Swimmer | `swimmer` | `swimmer1` | Run workouts, save programs |
 
-### Important: Change Your Passwords
+### Important: Change Default Passwords
 
-1. Log in as **admin**
+1. Log in as **admin** (password: `admin123`)
 2. Click your username in the top-right corner
 3. Go to **Profile** → **Change Password**
-4. Set a strong, new password
-5. Repeat for the **superadmin** account
+4. Set a strong, unique password (minimum 8 characters)
+5. Repeat for the **superadmin** and **swimmer** accounts
+
+### Custom Passwords (Production)
+
+Override the defaults via environment variables before first run:
+
+```bash
+ADMIN_PASS=YourStrongPass SUPERADMIN_PASS=AnotherStrongPass bash setup.sh
+```
+
+These are only used during account creation on the very first startup. They are hashed immediately and never stored in plaintext.
 
 ---
 
@@ -196,7 +356,122 @@ If you're a swimmer and want your own account:
 
 ---
 
-## 6. Home Screen
+## 6. EDGE Server Access
+
+The EDGE Server provides the Web UI, REST API, MQTT broker, and Modbus TCP gateway. Depending on your installation method, here's how to access it.
+
+### Finding the Server Address
+
+| Installation | Default URL | How to Find the IP |
+|-------------|-------------|-------------------|
+| Quick Install / Source | `http://<server-ip>:80` | Shown in the startup log (`HTTP server listening on...`) |
+| Docker | `http://<host-ip>:80` | The Docker host's IP; check with `docker inspect` or `hostname -I` |
+| Windows EXE | `http://localhost:80` | Shown in the console window; use machine IP for remote access |
+| Raspberry Pi | `http://<rpi-ip>:80` | Shown at end of installer; or use `hostname -I` on the RPi |
+
+### Ports and Services
+
+| Port | Protocol | Service | Notes |
+|------|----------|---------|-------|
+| **80** | HTTP | Web UI + REST API | Main access point for browsers and tablets |
+| **1883** | MQTT | MQTT broker (embedded Aedes) | PLC telemetry, real-time status |
+| **502** | TCP | Modbus TCP server | Industrial PLC integration |
+| **9001** | WebSocket | MQTT over WebSocket | Browser-based MQTT clients |
+
+> **Tip:** If ports 80 or 502 conflict with other services, set `HTTP_PORT` and `MODBUS_PORT` environment variables before starting. For Docker, change the host port mapping (e.g., `-p 8080:80`).
+
+### REST API Quick Reference
+
+| Endpoint | Method | Auth Required | Description |
+|----------|--------|--------------|-------------|
+| `/api/health` | GET | No | Server health check |
+| `/api/auth/login` | POST | No | User login (returns JWT) |
+| `/api/auth/register` | POST | No | User self-registration |
+| `/api/features` | GET | No | Feature flags |
+| `/api/workouts` | GET | Yes | List workouts |
+| `/api/admin/users` | GET | Admin | List all users |
+
+Pass the JWT token as `Authorization: Bearer <token>` in request headers.
+
+### Verifying the Server is Running
+
+```bash
+# Health check (should return {"status":"ok"})
+curl http://<server-ip>/api/health
+
+# Linux service
+sudo systemctl status swimex-edge
+
+# Docker
+docker ps | grep swimex
+docker logs swimex-edge
+
+# Windows
+# Check the console window, or:
+sc query SwimExEDGE
+```
+
+### Server Logs
+
+| Installation | Log Location |
+|-------------|-------------|
+| Quick Install / Source | Console output (stdout) |
+| Docker | `docker logs swimex-edge` or `docker compose logs` |
+| Linux Service | `sudo journalctl -u swimex-edge -f` |
+| Windows Service | Event Viewer or NSSM logs |
+
+---
+
+## 7. EDGE Client Access
+
+The EDGE Client is any device that connects to the EDGE Server to control the pool. There are two client types:
+
+### 1. Web Browser (Any Device)
+
+Any modern browser on the same network can access the full SwimEx EDGE interface.
+
+**Supported browsers:** Chrome, Firefox, Safari, Edge (latest versions)
+
+**How to connect:**
+1. Ensure your device is on the same Wi-Fi network as the server
+2. Open your browser and navigate to `http://<server-ip>` (e.g., `http://192.168.1.100`)
+3. Log in with your credentials
+4. You have full access to workouts, profiles, and (if admin) the admin panel
+
+**Responsive design:** The Web UI adapts to phones, tablets, and desktops.
+
+### 2. Android Kiosk App (Pool-Side Tablet)
+
+The dedicated Android app locks a tablet into a single-purpose pool control station. See [Android Tablet Setup](#14-android-tablet-setup) for full installation instructions.
+
+**Key features of the kiosk app:**
+- Full-screen, no navigation bar or app switcher
+- Auto-launches on boot
+- WebView pointing to the EDGE Server URL
+- Bluetooth LE for optional local sensors
+- Only admin/maintenance users can exit kiosk mode
+
+### Client–Server Network Requirements
+
+| Requirement | Details |
+|-------------|---------|
+| Network | Client and server must be on the same LAN (or routable subnet) |
+| Protocol | HTTP (port 80) + WebSocket (same port, path `/ws`) |
+| Latency | < 100 ms recommended for responsive control |
+| Internet | **Not required** — everything runs locally |
+
+### Registering Client Devices
+
+For security, tablets must be **registered** in the Admin Panel before they can issue pool control commands (start, stop, adjust speed). Unregistered devices can view the UI but cannot control the pool.
+
+1. Log in as Admin → gear icon → **Devices** tab
+2. Click **Register New Device**
+3. Enter the device MAC address and a friendly name
+4. The device now has full control permissions
+
+---
+
+## 8. Home Screen
 
 After logging in, you'll see the **Home Screen** with five workout modes:
 
@@ -212,9 +487,9 @@ Tap any card to enter that mode.
 
 ---
 
-## 7. Workout Modes
+## 9. Workout Modes
 
-### 7.1 Quick Start
+### 9.1 Quick Start
 
 The simplest mode — set a speed and swim.
 
@@ -232,7 +507,7 @@ The simplest mode — set a speed and swim.
 
 ---
 
-### 7.2 Custom Programs
+### 9.2 Custom Programs
 
 Create your own multi-step workouts with up to 10 steps per set.
 
@@ -269,7 +544,7 @@ Create your own multi-step workouts with up to 10 steps per set.
 
 ---
 
-### 7.3 Interval Training
+### 9.3 Interval Training
 
 Alternates between two speeds for a set number of rounds. Great for building endurance.
 
@@ -288,7 +563,7 @@ Alternates between two speeds for a set number of rounds. Great for building end
 
 ---
 
-### 7.4 Distance Presets
+### 9.4 Distance Presets
 
 Pre-built distance workouts at three difficulty levels.
 
@@ -303,7 +578,7 @@ The workout runs automatically through all steps and stops when complete.
 
 ---
 
-### 7.5 Sprint Presets
+### 9.5 Sprint Presets
 
 Pre-built high-intensity sprint workouts.
 
@@ -315,7 +590,7 @@ Sprint workouts alternate between high-speed bursts and recovery periods for 3 s
 
 ---
 
-## 8. During a Workout
+## 10. During a Workout
 
 While a workout is running, you'll see:
 
@@ -346,7 +621,7 @@ After the workout ends, your session is automatically saved to your profile.
 
 ---
 
-## 9. Your Profile
+## 11. Your Profile
 
 Click your **username** in the top-right corner to access your profile.
 
@@ -374,7 +649,7 @@ See your overall stats:
 
 ---
 
-## 10. Changing Themes
+## 12. Changing Themes
 
 SwimEx EDGE supports **Light** and **Dark** visual modes.
 
@@ -388,11 +663,11 @@ SwimEx EDGE also comes with 5 visual templates (Classic, Modern, Clinical, Sport
 
 ---
 
-## 11. Administration Guide
+## 13. Administration Guide
 
 > This section is for **Administrators** only. These options are not visible to regular users.
 
-### 11.1 User Management
+### 13.1 User Management
 
 **To access:** Log in as Admin → click the **gear icon** → **Users** tab
 
@@ -416,7 +691,7 @@ From here you can:
 
 ---
 
-### 11.2 Device Registration
+### 13.2 Device Registration
 
 For security, tablets must be **registered** to control the pool. Unregistered devices can only view — they can't start, stop, or change speed.
 
@@ -437,7 +712,7 @@ The tablet now has full control permissions.
 
 ---
 
-### 11.3 Communication Setup
+### 13.3 Communication Setup
 
 The EDGE server connects to the pool controller (PLC) using communication protocols. This is typically set up by the installation technician.
 
@@ -453,7 +728,7 @@ The EDGE server connects to the pool controller (PLC) using communication protoc
 
 ---
 
-## 12. Android Tablet Setup
+## 14. Android Tablet Setup
 
 ### Installing the Kiosk App
 
@@ -491,7 +766,7 @@ Only Administrators and Maintenance users can exit:
 
 ---
 
-## 13. Safety Features
+## 15. Safety Features
 
 SwimEx EDGE includes multiple safety mechanisms:
 
@@ -518,7 +793,147 @@ If a device is not registered in the Admin Panel, it can see the pool status but
 
 ---
 
-## 14. Troubleshooting
+## 16. Logging & Monitoring
+
+The EDGE Server has a multi-level logging system with structured output, file rotation, and a dedicated security log level for audit-relevant events.
+
+### Log Levels
+
+| Level | Purpose | Examples |
+|-------|---------|---------|
+| `debug` | Verbose development output | HTTP request paths, tag value changes, MQTT subscriptions |
+| `info` | Normal operational events | Server startup, user created, config loaded |
+| `security` | Authentication and authorization events | Login success/failure, password changes, session revocation, unauthorized access |
+| `warn` | Non-fatal issues | PLC heartbeat lost, MQTT reconnect, port conflict |
+| `error` | Recoverable failures | Database query error, Modbus frame error |
+| `fatal` | Unrecoverable failures | Startup crash, critical subsystem failure |
+
+Set the minimum level with `LOG_LEVEL`. For example, `LOG_LEVEL=security` shows security, warn, error, and fatal messages.
+
+### Console Output
+
+Logs always go to stdout/stderr (captured by systemd, Docker, or the terminal). Colorized on TTY, plain text in pipes.
+
+### File Logging
+
+Enable persistent log files with rotation:
+
+```bash
+LOG_FILE=/var/log/swimex-edge/server.log LOG_FORMAT=json LOG_MAX_SIZE_MB=10 LOG_MAX_FILES=5 bash setup.sh
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_FILE` | *(none)* | Path to log file — enables file logging |
+| `LOG_FORMAT` | `text` | `text` (human readable) or `json` (structured, machine parseable) |
+| `LOG_MAX_SIZE_MB` | `10` | Maximum file size before rotation |
+| `LOG_MAX_FILES` | `5` | Number of rotated files to keep |
+
+Log files are created with `0640` permissions. The data directory is created with `0700`.
+
+### Structured JSON Format
+
+When `LOG_FORMAT=json`, each log line is a JSON object:
+
+```json
+{
+  "timestamp": "2026-03-24T12:56:40.379Z",
+  "level": "security",
+  "module": "auth",
+  "message": "Login failed: wrong password for \"admin\"",
+  "data": { "sourceIp": "192.168.1.50" }
+}
+```
+
+Fields: `timestamp`, `level`, `module`, `message`, optional `data`, `requestId`, `userId`, `ip`.
+
+### Security Events Logged
+
+| Event | Level | Module |
+|-------|-------|--------|
+| Login success | `security` | `auth` |
+| Login failure (wrong password) | `security` | `auth` |
+| Login failure (unknown user) | `security` | `auth` |
+| Password changed | `security` | `auth` |
+| User disabled / deleted | `security` | `auth` |
+| Session revoked (expired/used) | `security` | `auth-middleware` |
+| Commissioning code set | `security` | `auth` |
+| Super admin reset (success/fail) | `security` | `auth` |
+| MQTT auth rejected | `security` | `mqtt-broker-embedded` |
+| Modbus unauthorized IP rejected | `security` | `modbus-server` |
+
+### Request Correlation
+
+Every HTTP request gets an `X-Request-ID` header (auto-generated or forwarded from `X-Request-ID` in the incoming request). This ID appears in log entries for tracing.
+
+### Viewing Logs
+
+```bash
+# Live console (foreground)
+bash setup.sh
+
+# systemd service
+sudo journalctl -u swimex-edge -f
+sudo journalctl -u swimex-edge --since "1 hour ago"
+sudo journalctl -u swimex-edge -p warning    # warn and above
+
+# Docker
+docker logs -f swimex-edge
+
+# Log file (grep for security events)
+grep '"security"' /var/log/swimex-edge/server.log
+```
+
+---
+
+## 17. Builds & Releases
+
+SwimEx EDGE uses GitHub Actions for automated builds. Every release produces multiple artifacts for different platforms.
+
+### Release Artifacts
+
+| Artifact | Platform | Setup |
+|----------|----------|-------|
+| `-linux-x64.tar.gz` | Linux x64 | `bash setup.sh` — self-contained, no Node.js install needed |
+| `.tar.gz` / `.zip` | Linux / Mac / Windows | `bash setup.sh` — auto-installs Node.js if missing |
+| `-windows-x64.zip` | Windows x64 | Double-click `setup.bat` — self-contained, no Node.js install needed |
+| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | `sudo bash setup.sh --install` — auto-installs Node.js, creates service |
+| Docker image | `linux/amd64`, `linux/arm64` | `bash setup.sh --docker` or `docker run ...` |
+
+### Triggering a Build
+
+Builds are triggered via **GitHub Actions → Build and Release → Run workflow**.
+
+Required input: **Release tag** (e.g., `v1.2.0`).
+
+Optional toggles:
+- **Build Linux** — produce the self-contained Linux x64 package (default: on)
+- **Build Docker** — push a multi-arch Docker image (default: on)
+- **Build Windows** — produce the Windows EXE portable package (default: on)
+- **Build RPi** — produce the Raspberry Pi ARM package (default: on)
+- **Create Release** — publish a GitHub Release with all artifacts (default: on)
+
+### CI Pipeline
+
+Every push and pull request to `main` runs the CI workflow which:
+1. Installs dependencies (`npm ci`)
+2. Compiles TypeScript (`tsc`)
+3. Runs the full test suite (`npm test`)
+
+### Docker Image Details
+
+| Property | Value |
+|----------|-------|
+| Base image | `node:20-alpine` |
+| Architectures | `linux/amd64`, `linux/arm64` |
+| Exposed ports | 80 (HTTP), 502 (Modbus) |
+| Volumes | `/data` (database, logs), `/config` (overrides) |
+| Health check | `GET /api/health` every 30s |
+| Default registry | `ghcr.io/<org>/swimex/edge-server` |
+
+---
+
+## 18. Troubleshooting
 
 ### "Cannot connect to server"
 
@@ -532,7 +947,7 @@ If a device is not registered in the Admin Panel, it can see the pool status but
 
 - Double-check your username and password (they're case-sensitive)
 - Ask an Administrator to check if your account is disabled
-- Try the default accounts: `admin` / `admin123`
+- Try the default accounts: `admin` / `admin123` or `superadmin` / `superadmin`
 
 ### "View only — cannot control pool"
 
@@ -553,13 +968,31 @@ If a device is not registered in the Admin Panel, it can see the pool status but
 
 ### Server won't start
 
-- Check that port 3000 (or your configured port) isn't in use by another program
+- Check that port 80 (or your configured port) isn't in use by another program
 - Make sure Node.js is version 18 or higher: `node --version`
 - Try deleting the `server/data` folder and restarting (this resets the database)
 
+### Setup script fails or server won't start
+
+- **`GLIBC not found`**: Your Linux is too old for the x64 package. Requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+). Use Docker instead.
+- **Port 80 requires root**: Run `sudo bash setup.sh` or set `HTTP_PORT=8080`
+- **`npm ci` fails on RPi**: Add swap memory: `sudo dphys-swapfile swapon`
+- **Windows antivirus blocks `node.exe`**: Add the extracted folder to your antivirus exclusions
+
+### Docker container exits immediately
+
+- Check logs: `docker logs swimex-edge`
+- Ensure `/data` volume is writable
+- Verify port 80 isn't already bound: `docker run -p 8080:80 ...` to use an alternate port
+
+### Native module build errors on RPi / ARM
+
+- Install build tools: `sudo apt-get install python3 make g++`
+- Then re-run: `sudo bash setup.sh --install`
+
 ---
 
-## 15. Frequently Asked Questions
+## 19. Frequently Asked Questions
 
 **Q: Can I use this without the Android tablet?**
 A: Yes! Open the server URL in any web browser on the same network. You get the full interface. The Android app just adds kiosk mode (locks the tablet to the SwimEx app).
@@ -579,8 +1012,11 @@ A: Yes! While a program is running, you can use the +5/-5 buttons to adjust the 
 **Q: What happens if the power goes out?**
 A: The pool motor stops immediately (no power = no motor). When power returns, the server restarts automatically (if configured as a service or using Docker). You'll need to manually start a new workout.
 
+**Q: Can I run this on a Raspberry Pi?**
+A: Yes! Download the RPi ARM package from the Releases page, extract it, and run `sudo bash setup.sh --install`. Works on RPi 3B+, 4B, and 5. See [Raspberry Pi](#raspberry-pi) for full instructions.
+
 **Q: How do I update SwimEx EDGE?**
-A: Download the new version, stop the current server, replace the files, and run `bash setup.sh` again. Your data (users, workouts, settings) is preserved in the `data/` folder.
+A: Download the new version, stop the current server, replace the files, and run `bash setup.sh` again (or `docker pull` for Docker). Your data (users, workouts, settings) is preserved in the `data/` folder (or `/data` Docker volume).
 
 **Q: I forgot the admin password. What do I do?**
 A: Use the Super Administrator commissioning code reset. Contact SwimEx support or your system integrator for the commissioning code. See the Installation section for details.

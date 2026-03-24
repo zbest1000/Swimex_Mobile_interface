@@ -8,8 +8,9 @@ The SwimEx EDGE platform consists of two main components:
 
 | Component | Description | Deployment Options |
 |-----------|--------------|-------------------|
-| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Native (Linux/Windows), Docker |
+| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Linux portable, Windows EXE, Raspberry Pi, Docker, native (from source) |
 | **EDGE Client** | Android kiosk app for pool control tablets | APK sideload |
+| **Web Client** | Any modern browser on the same network | No installation needed |
 
 ## Deployment Documentation Index
 
@@ -20,6 +21,20 @@ The SwimEx EDGE platform consists of two main components:
 | [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md) | Android APK sideload procedure. Permissions, first-launch wizard, kiosk mode configuration. |
 | [COMMISSIONING_GUIDE.md](COMMISSIONING_GUIDE.md) | Full first-run commissioning workflow. Commissioning codes, admin accounts, network config, PLC protocol selection. |
 | [UPGRADE_GUIDE.md](UPGRADE_GUIDE.md) | Upgrade procedures for server and client. Database migrations, backup/restore, rollback. |
+
+## Release Artifacts (CI/CD)
+
+The GitHub Actions `Build and Release` workflow produces platform-specific packages:
+
+| Artifact | Platform | Setup |
+|----------|----------|-------|
+| `-linux-x64.tar.gz` | Linux x64 | `bash setup.sh` (self-contained, no Node.js needed) |
+| `.tar.gz` / `.zip` | Any OS (generic) | `bash setup.sh` (auto-installs Node.js if missing) |
+| `-windows-x64.zip` | Windows x64 | Double-click `setup.bat` (self-contained, no Node.js needed) |
+| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | `sudo bash setup.sh --install` (auto-installs Node.js, creates service) |
+| Docker image | `linux/amd64`, `linux/arm64` | `bash setup.sh --docker` or `docker run ...` |
+
+See [MANUAL.md](../../MANUAL.md) § 16 (Builds & Releases) for workflow details.
 
 ## Deployment Topology
 
@@ -42,9 +57,9 @@ The SwimEx EDGE platform consists of two main components:
 
 ## Quick Start
 
-1. **Server**: Choose [native installation](SERVER_INSTALLATION.md) or [Docker](DOCKER_DEPLOYMENT.md).
-2. **Post-install**: Open `http://<server-ip>:<port>` in a browser to run the setup wizard.
-3. **Client**: Install the APK on Android tablets per [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md).
+1. **Server**: Download the release for your platform, extract, and run `bash setup.sh` (or `setup.bat` on Windows). One command does everything. Add `--install` for systemd service, `--docker` for Docker Compose.
+2. **Post-install**: Open the URL shown in the terminal.
+3. **Client**: Install the APK on Android tablets per [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md), or just open the URL in any browser.
 4. **Commissioning**: Complete the [COMMISSIONING_GUIDE.md](COMMISSIONING_GUIDE.md) for first-run setup.
 
 ## Hardware Requirements Summary

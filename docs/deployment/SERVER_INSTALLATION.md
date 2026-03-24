@@ -28,12 +28,28 @@ This topology isolates PLC traffic from client traffic and ensures reliable pool
 
 | Platform | Requirements |
 |----------|--------------|
-| Linux | systemd, openssl, glibc 2.31+ |
-| Windows | .NET Runtime (included in installer), Administrator privileges |
+| Linux (portable) | glibc 2.28+ (all deps bundled) |
+| Linux (package install) | systemd, openssl, glibc 2.28+ |
+| Windows (portable EXE) | Windows 10/11 x64 (all deps bundled) |
+| Windows (from source) | Node.js 18+, Administrator privileges |
 
 ## Linux Installation
 
-### Supported Distributions
+### Linux Portable Package (Recommended)
+
+The easiest Linux option — no Node.js installation required. One command to set up and run:
+
+```bash
+tar -xzf swimex-edge-server-*-linux-x64.tar.gz
+cd swimex-edge-server-*-linux-x64
+bash setup.sh
+```
+
+To install as a persistent systemd service: `sudo bash setup.sh --install`
+
+Works on any x64 Linux with glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
+
+### Supported Distributions (Package Install)
 
 | Distribution | Package Format | Versions |
 |--------------|----------------|----------|
@@ -104,9 +120,19 @@ Service unit file location: `/etc/systemd/system/swimex-edge.service` or `/lib/s
 | OS | Version | Notes |
 |----|---------|-------|
 | Windows 10 | Pro, Enterprise, IoT Enterprise | 64-bit required |
+| Windows 11 | All editions | 64-bit required |
 | Windows Server | 2019, 2022 | Headless deployments |
 
-### .msi Installer
+### Portable EXE Package (Recommended)
+
+The easiest Windows option — no Node.js installation required:
+
+1. Download and extract `swimex-edge-server-<version>-windows-x64.zip`
+2. **Double-click `setup.bat`**
+
+The server starts automatically. Open `http://localhost` in a browser. Default login: `admin` / `admin123`.
+
+### .msi Installer (Alternative)
 
 1. Download `swimex-edge-server-1.0.0-x64.msi`.
 2. Run as Administrator (right-click, "Run as administrator").
@@ -117,13 +143,10 @@ Service unit file location: `/etc/systemd/system/swimex-edge.service` or `/lib/s
    - Complete installation
 4. The EDGE Server installs as a Windows Service and starts automatically.
 
-### .exe Installer (Alternative)
+### From Source (Developer)
 
-For interactive installations with GUI:
-
-1. Run `swimex-edge-server-setup-1.0.0.exe` as Administrator.
-2. Follow the wizard; options match the .msi installer.
-3. Optionally launch the setup wizard in browser at completion.
+1. Install Node.js 18+ from https://nodejs.org
+2. `cd server && npm install && npm run build && npm start`
 
 ### Windows Service Registration
 
@@ -134,6 +157,49 @@ The installer registers the service as `SwimExEDGE`. Manage via:
 | Services GUI | `services.msc` — locate "SwimEx EDGE Server" |
 | Command line | `sc start SwimExEDGE`, `sc stop SwimExEDGE` |
 | PowerShell | `Start-Service SwimExEDGE`, `Stop-Service SwimExEDGE` |
+
+## Raspberry Pi Installation
+
+### Supported Hardware
+
+| Model | Status | Notes |
+|-------|--------|-------|
+| Raspberry Pi 3B+ | Supported | Minimum viable; 1 GB RAM |
+| Raspberry Pi 4B (2 GB+) | Recommended | Best performance/cost ratio |
+| Raspberry Pi 5 | Supported | Fastest option |
+
+### Supported OS
+
+Raspberry Pi OS (Lite or Desktop), 32-bit or 64-bit. Debian Bookworm or Bullseye.
+
+### Quick Install
+
+```bash
+tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
+cd swimex-edge-server-*-rpi-arm
+sudo bash setup.sh --install
+```
+
+The setup script automatically installs Node.js if missing, copies files to `/opt/swimex-edge`, creates a dedicated `swimex` service user, reduces GPU memory to 16 MB (headless), and registers a hardened systemd service with `CAP_NET_BIND_SERVICE`.
+
+### Managing the Service
+
+```bash
+sudo systemctl status swimex-edge     # Check status
+sudo systemctl restart swimex-edge    # Restart
+sudo systemctl stop swimex-edge       # Stop
+sudo journalctl -u swimex-edge -f     # Live logs
+```
+
+### Headless Setup (No Monitor)
+
+1. Flash Raspberry Pi OS Lite using [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+2. In the imager settings, configure Wi-Fi, enable SSH, set hostname
+3. Boot RPi, SSH in: `ssh pi@<hostname>.local`
+4. Transfer and run the installer
+5. Access the Web UI from any browser on the network
+
+---
 
 ## Post-Installation
 

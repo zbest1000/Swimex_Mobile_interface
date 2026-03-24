@@ -46,15 +46,11 @@ ENV NODE_ENV=production \
     HTTP_PORT=80 \
     MQTT_HOST=mosquitto \
     MQTT_PORT=1883 \
-    MQTT_USER=edge-server \
-    MQTT_PASS=edge-server-secret \
     MODBUS_PORT=502 \
     DATA_DIR=/data \
     CONFIG_DIR=/config \
     POOL_ID=default \
-    LOG_LEVEL=info \
-    ADMIN_USER=admin \
-    ADMIN_PASS=changeme
+    LOG_LEVEL=info
 
 # Expose ports
 EXPOSE 80 502

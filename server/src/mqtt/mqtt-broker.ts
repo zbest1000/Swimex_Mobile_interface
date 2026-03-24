@@ -26,7 +26,7 @@ const DEFAULT_MQTT_CONFIG: MqttBrokerConfig = {
   host: process.env.MQTT_HOST ?? 'localhost',
   port: parseInt(process.env.MQTT_PORT ?? '1883', 10),
   username: process.env.MQTT_USER ?? 'edge-server',
-  password: process.env.MQTT_PASS ?? 'edge-server-secret',
+  password: process.env.MQTT_PASS ?? '',
   clientId: `edge-server-${process.env.POOL_ID ?? 'default'}-${Date.now()}`,
   keepalive: 60,
   reconnectPeriod: 5000,
@@ -318,8 +318,9 @@ export class MqttService extends EventEmitter {
     return this.mqttConfig.topicPrefix;
   }
 
-  getConfig(): MqttBrokerConfig {
-    return { ...this.mqttConfig };
+  getConfig(): Omit<MqttBrokerConfig, 'password'> {
+    const { password: _pw, ...safe } = this.mqttConfig;
+    return safe;
   }
 
   async stop(): Promise<void> {

@@ -5,10 +5,16 @@ import { UserRole } from '../shared/models';
 
 const log = createLogger('seed');
 
+const DEFAULT_ACCOUNTS = [
+  { username: 'superadmin', password: 'superadmin', displayName: 'Super Administrator', role: UserRole.SUPER_ADMINISTRATOR },
+  { username: 'admin',      password: 'admin123',   displayName: 'Administrator',       role: UserRole.ADMINISTRATOR },
+  { username: 'swimmer',    password: 'swimmer1',    displayName: 'Demo Swimmer',        role: UserRole.USER },
+];
+
 /**
- * Auto-seed on first run: creates the initial Super Admin account.
- * The system starts UNCOMMISSIONED — the Super Admin must complete
- * the commissioning wizard on first login before anyone else can use the system.
+ * Auto-seed on first run: creates default accounts.
+ * Passwords are hashed with Argon2id before storage — plaintext is never
+ * persisted in the database, logs, or filesystem.
  */
 export async function seedDefaults(): Promise<void> {
   const db = getDb();
@@ -19,9 +25,8 @@ export async function seedDefaults(): Promise<void> {
     return;
   }
 
-  log.info('First-run detected — seeding initial Super Admin account...');
+  log.info('First-run detected — seeding default accounts...');
 
-  // Mark system as NOT commissioned
   db.prepare(`
     INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioned', 'false', datetime('now'))
   `).run();
@@ -29,25 +34,22 @@ export async function seedDefaults(): Promise<void> {
     INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('commissioning_step', '0', datetime('now'))
   `).run();
 
-  try {
-    await authService.createUser('superadmin', 'superadmin', 'Super Administrator', UserRole.SUPER_ADMINISTRATOR);
-    log.info('Created initial Super Administrator account');
-  } catch (err: any) {
-    log.warn(`Super admin creation: ${err.message}`);
+  for (const acct of DEFAULT_ACCOUNTS) {
+    const password = (acct.username === 'admin' && process.env.ADMIN_PASS)
+      ? process.env.ADMIN_PASS
+      : (acct.username === 'superadmin' && process.env.SUPERADMIN_PASS)
+        ? process.env.SUPERADMIN_PASS
+        : acct.password;
+    try {
+      await authService.createUser(acct.username, password, acct.displayName, acct.role);
+      log.info(`Created account: ${acct.username} (${acct.role})`);
+    } catch (err: any) {
+      log.warn(`Account creation (${acct.username}): ${err.message}`);
+    }
   }
 
-  try {
-    await authService.createUser('admin', 'admin', 'Administrator', UserRole.ADMINISTRATOR);
-    log.info('Created initial Administrator account');
-  } catch (err: any) {
-    log.warn(`Admin creation: ${err.message}`);
-  }
-
-  log.info('========================================');
-  log.info(' Default accounts created.');
-  log.info(' CHANGE DEFAULT PASSWORDS IMMEDIATELY');
-  log.info(' via the commissioning wizard.');
-  log.info('========================================');
+  log.info('Default accounts created (passwords stored as Argon2id hashes).');
+  log.info('IMPORTANT: Change default passwords after first login.');
 }
 
 /**

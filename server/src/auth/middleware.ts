@@ -3,6 +3,9 @@ import { verifyToken, TokenPayload } from './auth-service';
 import { UserRole } from '../shared/models';
 import { AuthError, ForbiddenError, DeviceNotRegisteredError } from '../utils/errors';
 import { getDb } from '../database/connection';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('auth-middleware');
 
 declare global {
   namespace Express {
@@ -35,6 +38,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     ).get(sessionId) as Record<string, unknown> | undefined;
 
     if (!session) {
+      log.security(`Revoked/expired session used by ${req.user.username}`, { ip: req.ip });
       return next(new AuthError('Session expired or revoked'));
     }
 
@@ -49,7 +53,16 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     try {
-      req.user = verifyToken(token);
+      const payload = verifyToken(token);
+      if (payload.sessionId) {
+        const db = getDb();
+        const session = db.prepare(
+          "SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime('now')"
+        ).get(payload.sessionId);
+        if (session) {
+          req.user = payload;
+        }
+      }
     } catch {
       // Ignore invalid tokens for optional auth
     }

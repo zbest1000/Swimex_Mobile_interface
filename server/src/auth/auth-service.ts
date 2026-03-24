@@ -10,6 +10,8 @@ import { auditLog } from './audit';
 
 const log = createLogger('auth');
 
+const USER_SAFE_COLUMNS = 'id, username, display_name, email, role, is_active, created_at, last_login_at';
+
 export interface TokenPayload {
   userId: string;
   username: string;
@@ -55,13 +57,13 @@ export function generateToken(payload: TokenPayload): string {
   return jwt.sign(
     { userId: payload.userId, username: payload.username, role: payload.role, sessionId: payload.sessionId },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn as any },
+    { algorithm: 'HS256', expiresIn: config.jwtExpiresIn as any },
   );
 }
 
 export function verifyToken(token: string): TokenPayload {
   try {
-    return jwt.verify(token, config.jwtSecret) as TokenPayload;
+    return jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as TokenPayload;
   } catch {
     throw new AuthError('Invalid or expired token');
   }
@@ -78,7 +80,7 @@ export async function createUser(
   const db = getDb();
 
   if (!username || username.length < 3) throw new ValidationError('Username must be at least 3 characters');
-  if (!password || password.length < 4) throw new ValidationError('Password must be at least 4 characters');
+  if (!password || password.length < 8) throw new ValidationError('Password must be at least 8 characters');
   if (!displayName) throw new ValidationError('Display name is required');
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
@@ -100,21 +102,23 @@ export async function createUser(
   auditLog('USER_CREATED', createdBy ?? null, 'user', id, { username, role });
   log.info(`User created: ${username} (${role})`);
 
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Record<string, unknown>;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(id) as Record<string, unknown>;
   return toUserDTO(row);
 }
 
 export async function login(username: string, password: string, sourceIp?: string): Promise<{ user: UserDTO; token: string }> {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as Record<string, unknown> | undefined;
+  const row = db.prepare('SELECT id, username, display_name, email, role, is_active, created_at, last_login_at, password_hash FROM users WHERE username = ? AND is_active = 1').get(username) as Record<string, unknown> | undefined;
 
   if (!row) {
+    log.security(`Login failed: unknown user "${username}"`, { sourceIp });
     auditLog('LOGIN_FAILED', null, 'auth', null, { username, reason: 'user not found', sourceIp });
     throw new AuthError('Invalid credentials');
   }
 
   const valid = await verifyPassword(row.password_hash as string, password);
   if (!valid) {
+    log.security(`Login failed: wrong password for "${username}"`, { sourceIp });
     auditLog('LOGIN_FAILED', row.id as string, 'auth', null, { username, reason: 'wrong password', sourceIp });
     throw new AuthError('Invalid credentials');
   }
@@ -129,14 +133,14 @@ export async function login(username: string, password: string, sourceIp?: strin
   db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(sessionId, user.id, expiresAt);
 
   auditLog('LOGIN_SUCCESS', user.id, 'auth', user.id, { sourceIp });
-  log.info(`User logged in: ${username}`);
+  log.security(`Login success: "${username}" (${user.role})`, { sourceIp });
 
   return { user, token };
 }
 
 export function getUserById(id: string): UserDTO | null {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
   return row ? toUserDTO(row) : null;
 }
 
@@ -144,9 +148,9 @@ export function listUsers(role?: UserRole): UserDTO[] {
   const db = getDb();
   let rows: Record<string, unknown>[];
   if (role) {
-    rows = db.prepare('SELECT * FROM users WHERE role = ? ORDER BY created_at DESC').all(role) as Record<string, unknown>[];
+    rows = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE role = ? ORDER BY created_at DESC`).all(role) as Record<string, unknown>[];
   } else {
-    rows = db.prepare('SELECT * FROM users WHERE role != ? ORDER BY created_at DESC').all(UserRole.SUPER_ADMINISTRATOR) as Record<string, unknown>[];
+    rows = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE role != ? ORDER BY created_at DESC`).all(UserRole.SUPER_ADMINISTRATOR) as Record<string, unknown>[];
   }
   return rows.map(toUserDTO);
 }
@@ -163,12 +167,12 @@ export async function updateUserRole(userId: string, newRole: UserRole, actorId:
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(newRole, userId);
   auditLog('ROLE_CHANGED', actorId, 'user', userId, { newRole });
 
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as Record<string, unknown>;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(userId) as Record<string, unknown>;
   return toUserDTO(row);
 }
 
 export async function updatePassword(userId: string, newPassword: string, actorId?: string, currentPassword?: string): Promise<void> {
-  if (!newPassword || newPassword.length < 4) throw new ValidationError('Password must be at least 4 characters');
+  if (!newPassword || newPassword.length < 8) throw new ValidationError('Password must be at least 8 characters');
   const db = getDb();
 
   if (currentPassword !== undefined) {
@@ -180,12 +184,16 @@ export async function updatePassword(userId: string, newPassword: string, actorI
 
   const hash = await hashPassword(newPassword);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+  db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
+  log.security(`Password changed for user ${userId}`, { actorId: actorId ?? userId });
   auditLog('PASSWORD_CHANGED', actorId ?? userId, 'user', userId, {});
 }
 
 export function disableUser(userId: string, actorId: string): void {
   const db = getDb();
   db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId);
+  db.prepare("UPDATE sessions SET is_revoked = 1 WHERE user_id = ?").run(userId);
+  log.security(`User disabled: ${userId}`, { actorId });
   auditLog('USER_DISABLED', actorId, 'user', userId, {});
 }
 
@@ -198,6 +206,7 @@ export function enableUser(userId: string, actorId: string): void {
 export function deleteUser(userId: string, actorId: string): void {
   const db = getDb();
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  log.security(`User deleted: ${userId}`, { actorId });
   auditLog('USER_DELETED', actorId, 'user', userId, {});
 }
 
@@ -225,7 +234,7 @@ export async function setCommissioningCode(org: CommissioningOrg, code: string):
   }
 
   auditLog('COMMISSIONING_CODE_SET', null, 'commissioning', org, { organization: org });
-  log.info(`Commissioning code set for ${org}`);
+  log.security(`Commissioning code set for ${org}`);
 }
 
 export async function resetSuperAdmin(
@@ -264,6 +273,7 @@ export async function resetSuperAdmin(
       WHERE organization = ?
     `).run(attempts, lockoutUntil, org);
 
+    log.security(`Super admin reset FAILED: invalid code for ${org} (attempt ${attempts})`, { sourceIp });
     auditLog('SUPER_ADMIN_RESET_FAILED', null, 'commissioning', org, { organization: org, sourceIp, attempts });
     throw new AuthError('Invalid commissioning code');
   }
@@ -281,7 +291,7 @@ export async function resetSuperAdmin(
   // Create new Super Admin
   const user = await createUser(newUsername, newPassword, newUsername, UserRole.SUPER_ADMINISTRATOR);
   auditLog('SUPER_ADMIN_RESET_SUCCESS', user.id, 'commissioning', org, { organization: org, sourceIp });
-  log.info(`Super Admin account reset via ${org} commissioning code`);
+  log.security(`Super admin reset SUCCESS via ${org} commissioning code`, { sourceIp });
 
   return user;
 }

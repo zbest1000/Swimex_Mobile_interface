@@ -17,6 +17,10 @@ export interface ServerConfig {
   defaultAdminPass: string;
   poolId: string;
   logLevel: string;
+  logFile: string;
+  logFormat: 'text' | 'json';
+  logMaxSizeMB: number;
+  logMaxFiles: number;
   simulatorMode: boolean;
   useEmbeddedBroker: boolean;
   disablePlcChecks: boolean;
@@ -28,7 +32,12 @@ function env(key: string, fallback: string): string {
 
 function resolveJwtSecret(): string {
   const explicit = process.env.JWT_SECRET;
-  if (explicit) return explicit;
+  if (explicit) {
+    if (explicit.length < 32) {
+      console.warn('[SECURITY] JWT_SECRET is shorter than 32 characters. Use a stronger secret for production.');
+    }
+    return explicit;
+  }
   const generated = crypto.randomBytes(48).toString('base64url');
   console.warn(
     '[SECURITY] JWT_SECRET not set — using a random ephemeral secret. ' +
@@ -51,9 +60,13 @@ export function loadConfig(): ServerConfig {
     heartbeatIntervalMs: parseInt(env('HEARTBEAT_INTERVAL_MS', '2000'), 10),
     heartbeatMissedThreshold: parseInt(env('HEARTBEAT_MISSED_THRESHOLD', '3'), 10),
     defaultAdminUser: env('ADMIN_USER', 'admin'),
-    defaultAdminPass: env('ADMIN_PASS', 'admin'),
+    defaultAdminPass: env('ADMIN_PASS', ''),
     poolId: env('POOL_ID', 'default'),
     logLevel: env('LOG_LEVEL', 'info'),
+    logFile: env('LOG_FILE', ''),
+    logFormat: env('LOG_FORMAT', 'text') as 'text' | 'json',
+    logMaxSizeMB: parseInt(env('LOG_MAX_SIZE_MB', '10'), 10),
+    logMaxFiles: parseInt(env('LOG_MAX_FILES', '5'), 10),
     simulatorMode: env('SIMULATOR_MODE', 'false') === 'true' || env('SIMULATOR_MODE', '0') === '1',
     useEmbeddedBroker: env('MQTT_EXTERNAL', 'false') !== 'true',
     disablePlcChecks: env('DISABLE_PLC_CHECKS', 'false') === 'true',

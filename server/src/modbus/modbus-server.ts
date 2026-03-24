@@ -202,8 +202,9 @@ export class ModbusTcpServer {
     this.loadMappingsFromDb();
     this.server = net.createServer((socket) => this.handleConnection(socket));
 
+    const bindAddr = process.env.MODBUS_BIND_ADDRESS ?? '127.0.0.1';
     return new Promise((resolve, reject) => {
-      this.server!.listen(config.modbusPort, '0.0.0.0', () => {
+      this.server!.listen(config.modbusPort, bindAddr, () => {
         this.started = true;
         log.info(`Modbus TCP server listening on port ${config.modbusPort} (Unit ID: ${this.unitId})`);
         resolve();
@@ -216,6 +217,17 @@ export class ModbusTcpServer {
   }
 
   private handleConnection(socket: net.Socket): void {
+    const allowedIps = process.env.MODBUS_ALLOWED_IPS;
+    if (allowedIps) {
+      const allowed = allowedIps.split(',').map(s => s.trim());
+      const remote = socket.remoteAddress?.replace('::ffff:', '') ?? '';
+      if (!allowed.includes(remote)) {
+        log.security(`Modbus: rejected connection from unauthorized IP ${remote}`);
+        socket.destroy();
+        return;
+      }
+    }
+
     if (this.connections.size >= this.maxConnections) {
       log.warn(`Modbus: max connections (${this.maxConnections}) reached, rejecting`);
       socket.destroy();
@@ -232,6 +244,7 @@ export class ModbusTcpServer {
       buffer = Buffer.concat([buffer, data]);
       while (buffer.length >= MBAP_HEADER_LENGTH) {
         const pduLength = buffer.readUInt16BE(4);
+        if (pduLength > 260) { buffer = Buffer.alloc(0); break; }
         const totalLength = MBAP_HEADER_LENGTH - 1 + pduLength;
         if (buffer.length < totalLength) break;
 
