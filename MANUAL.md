@@ -38,7 +38,7 @@ This manual covers everything you need to know to install, set up, and use the S
 15. [Safety Features](#15-safety-features)
 16. [Builds & Releases](#16-builds--releases)
 17. [Troubleshooting](#17-troubleshooting)
-18. [Frequently Asked Questions](#18-faq)
+18. [Frequently Asked Questions](#18-frequently-asked-questions)
 
 ---
 
