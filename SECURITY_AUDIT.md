@@ -1,184 +1,575 @@
-# Security Audit Report — Authentication & Session Management
+# Security Audit Report — HTTP Layer
 
-**Date:** 2026-03-24  
-**Scope:** `server/src/auth/`, `server/src/http/`, `server/src/utils/config.ts`, `server/src/utils/errors.ts`, `server/src/database/migrate.ts`
+**Scope:** `/workspace/server/src/http/` (server.ts, middleware.ts, routes/*.ts), plus supporting auth, websocket, and config files.
 
----
-
-## Files Reviewed
-
-| # | File | Lines |
-|---|------|-------|
-| 1 | `server/src/auth/auth-service.ts` | 316 |
-| 2 | `server/src/auth/middleware.ts` | 115 |
-| 3 | `server/src/auth/audit.ts` | 59 |
-| 4 | `server/src/http/server.ts` | 159 |
-| 5 | `server/src/http/routes/auth-routes.ts` | 403 |
-| 6 | `server/src/http/routes/admin-routes.ts` | 377 |
-| 7 | `server/src/http/routes/user-routes.ts` | 117 |
-| 8 | `server/src/http/routes/workout-routes.ts` | 324 |
-| 9 | `server/src/http/routes/graphics-routes.ts` | 110 |
-| 10 | `server/src/utils/config.ts` | 63 |
-| 11 | `server/src/utils/errors.ts` | 54 |
+**Date:** 2026-03-24
 
 ---
 
-## 1. Password Hashing
+## Table of Contents
 
-### What's good
-- Argon2id is used for all password hashing (`auth-service.ts:47`). This is the current best-practice algorithm.
-- Salt is handled automatically by the `argon2` library (random salt per hash).
-- `argon2.verify()` is used for comparison (`auth-service.ts:51`), which is internally constant-time against the hash.
-- Commissioning codes are also hashed with Argon2id (`auth-service.ts:215`).
-
-### Findings
-
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **LOW** | Default Argon2 parameters | `auth-service.ts:47` | `argon2.hash(password, { type: argon2.argon2id })` uses library defaults for memory cost, time cost, and parallelism. The defaults (64 MiB, 3 iterations, 4 parallelism) are reasonable but not explicitly set, so a library upgrade could silently change them. | Explicitly set `memoryCost`, `timeCost`, and `parallelism` to OWASP-recommended values (e.g., `memoryCost: 65536`, `timeCost: 3`, `parallelism: 4`). |
-| **INFO** | Timing-safe comparison delegated to library | `auth-service.ts:51` | `argon2.verify()` performs constant-time comparison internally. No custom `timingSafeEqual` call is needed. | No action required — correct. |
+1. [CORS Configuration](#1-cors-configuration)
+2. [Security Headers](#2-security-headers)
+3. [Input Validation](#3-input-validation)
+4. [Path Traversal](#4-path-traversal)
+5. [Rate Limiting](#5-rate-limiting)
+6. [Error Handling](#6-error-handling)
+7. [File Upload](#7-file-upload)
+8. [Static File Serving](#8-static-file-serving)
+9. [WebSocket Authentication](#9-websocket-authentication)
+10. [Additional Findings](#10-additional-findings)
 
 ---
 
-## 2. JWT
+## 1. CORS Configuration
 
-### What's good
-- JWT secret falls back to a cryptographically random 48-byte value when `JWT_SECRET` is not set (`config.ts:32`).
-- A clear warning is logged when the ephemeral secret is used (`config.ts:33-36`).
-- Tokens contain `userId`, `username`, `role`, and `sessionId`.
-- `jwt.verify()` is used with the shared secret (`auth-service.ts:64`).
+### Finding SEC-01: Fully Permissive CORS — `cors()` with No Origin Restriction
 
-### Findings
+| Field | Value |
+|-------|-------|
+| **Severity** | **HIGH** |
+| **File** | `server/src/http/server.ts` |
+| **Line** | 19 |
+| **Code** | `app.use(cors());` |
 
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **HIGH** | No JWT algorithm pinning | `auth-service.ts:55-59`, `auth-service.ts:62-68` | `jwt.sign()` does not specify `algorithm: 'HS256'` and `jwt.verify()` does not specify `algorithms: ['HS256']`. The `jsonwebtoken` library defaults to HS256 for sign, but `verify()` without `algorithms` accepts **any** algorithm, including `none`. An attacker could forge a token with `alg: "none"` and bypass verification entirely. | Add `{ algorithms: ['HS256'] }` to `jwt.verify()`, and `{ algorithm: 'HS256' }` to `jwt.sign()`. |
-| **HIGH** | No minimum JWT secret length enforcement | `config.ts:29-37` | When `JWT_SECRET` is set via environment variable, there is no validation of its length or entropy. A user could set `JWT_SECRET=password` and the system would accept it. | Validate that `JWT_SECRET` is at least 32 characters (256 bits). Refuse to start if the secret is too short. |
-| **MEDIUM** | Ephemeral secret invalidates sessions on restart | `config.ts:32` | When `JWT_SECRET` is not set, a random secret is generated on every startup. All existing JWTs become invalid on restart. While the warning is good, this is a production risk. | Consider persisting the generated secret to a file (e.g., `$DATA_DIR/.jwt_secret`) on first run, or require `JWT_SECRET` in production mode. |
-| **MEDIUM** | Token expiry mismatch with session expiry | `auth-service.ts:58`, `auth-service.ts:128` | JWT `expiresIn` is configurable (default `24h`), but the session DB record is hard-coded to expire in exactly 24 hours (`Date.now() + 24 * 60 * 60 * 1000`). If `JWT_EXPIRES_IN` is changed, the JWT and session lifetimes diverge. | Derive session expiry from the same config value as JWT expiry, or use a single source of truth. |
-| **LOW** | `expiresIn` cast to `any` | `auth-service.ts:58` | `expiresIn: config.jwtExpiresIn as any` suppresses type checking. If `jwtExpiresIn` contains an invalid value (e.g., `"abc"`), `jsonwebtoken` may behave unpredictably. | Validate the format of `JWT_EXPIRES_IN` at startup (e.g., match against `/^\d+[smhd]$/`). |
+**Description:** `cors()` called with zero arguments defaults to `Access-Control-Allow-Origin: *`. This allows any website on the internet to make credentialed cross-origin requests to the API. On an embedded device this may be lower risk (LAN-only), but it still permits any malicious page open on a device within the same network to exfiltrate tokens and interact with the API.
 
----
-
-## 3. Session Management
-
-### What's good
-- Sessions are stored in a DB table with `token` (the sessionId UUID), `user_id`, `expires_at`, and `is_revoked`.
-- The `authenticate` middleware checks both JWT validity AND session validity in the DB (`middleware.ts:28-39`).
-- Logout revokes the session via `is_revoked = 1` (`auth-routes.ts:88-91`).
-- Session ID is a UUID v4 (`auth-service.ts:125`), not derived from predictable data.
-
-### Findings
-
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **HIGH** | No session invalidation on password change | `auth-service.ts:170-184` | When a user's password is changed (by self or admin), existing sessions remain valid. An attacker who has stolen a session can keep using it even after the victim changes their password. | After password change, revoke all sessions for that user: `UPDATE sessions SET is_revoked = 1 WHERE user_id = ?`. |
-| **HIGH** | No session invalidation on user disable | `auth-service.ts:186-189` | When a user is disabled (`is_active = 0`), their existing sessions remain valid. The `authenticate` middleware does not check `is_active` on the user — it only checks the session table. | Either (a) revoke all sessions on disable, or (b) add an `is_active` check in the `authenticate` middleware by joining or querying the `users` table. |
-| **MEDIUM** | No "revoke all sessions" / forced logout | N/A | There is no endpoint or mechanism to revoke all sessions for a given user (e.g., "log out everywhere"). | Add an admin endpoint and a self-service endpoint to revoke all sessions for a user. |
-| **MEDIUM** | `optionalAuth` does not validate session | `middleware.ts:47-58` | `optionalAuth` only verifies the JWT but does **not** check the session DB. A revoked or expired session will still pass `optionalAuth` and populate `req.user`. Any route relying on `optionalAuth` to gate behavior based on `req.user` presence will honor revoked sessions. | Add session DB validation to `optionalAuth` (or clear `req.user` if the session is invalid). |
-| **MEDIUM** | No session cleanup / garbage collection | `migrate.ts:166-172` | Expired and revoked sessions accumulate in the `sessions` table indefinitely. Over time this degrades DB performance. | Add a periodic cleanup job (e.g., on startup or via a cron-like interval) that deletes sessions where `expires_at < datetime('now')` or `is_revoked = 1`. |
-| **LOW** | Session table uses `token` as primary key | `migrate.ts:166` | The `token` column stores the session UUID and is the primary key. Column name `token` is misleading since it's not the JWT itself. | Rename to `id` or `session_id` for clarity (cosmetic, not a security bug). |
+**Recommended Fix:**
+```ts
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow same-origin requests (no Origin header) and known origins
+    if (!origin) return callback(null, true);
+    const allowedOrigins = [
+      `http://localhost:${config.httpPort}`,
+      `http://127.0.0.1:${config.httpPort}`,
+      // Add the device's LAN IP or hostname
+    ];
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
+```
 
 ---
 
-## 4. Brute-Force Protection
+## 2. Security Headers
 
-### What's good
-- `express-rate-limit` is applied to login (`auth-routes.ts:14-20`): 20 attempts per 15 minutes per IP.
-- Registration has its own limiter (`auth-routes.ts:22-28`): 10 attempts per hour per IP.
-- Commissioning endpoint has a strict limiter (`auth-routes.ts:30-36`): 5 attempts per 15 minutes.
-- The `resetSuperAdmin` function has progressive lockouts per commissioning org (`auth-service.ts:206`, `256-268`): 30s → 60s → 5m → 15m → 1h.
+### Finding SEC-02: No Security Headers (Helmet.js Not Installed or Used)
 
-### Findings
+| Field | Value |
+|-------|-------|
+| **Severity** | **HIGH** |
+| **File** | `server/src/http/server.ts` |
+| **Line** | N/A (missing) |
 
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **HIGH** | No per-account brute-force protection on login | `auth-routes.ts:67`, `auth-service.ts:107-134` | Rate limiting is IP-based only (via `express-rate-limit`). An attacker using distributed IPs (botnet) can brute-force a single account without triggering the rate limit. There is no account lockout after N failed attempts. | Implement per-account lockout: track `failed_login_attempts` and `lockout_until` on the `users` table (similar to how commissioning codes already work). Lock the account after 5-10 failed attempts with progressive delays. |
-| **MEDIUM** | Rate limiter uses default key generator | `auth-routes.ts:14-20` | `express-rate-limit` defaults to `req.ip` for keying. Behind a reverse proxy without `trust proxy` set, `req.ip` may be the proxy's IP, allowing all traffic to share one rate-limit bucket (or conversely, be trivially bypassed via `X-Forwarded-For` header spoofing). | Set `app.set('trust proxy', ...)` appropriately, or configure a custom `keyGenerator` on the rate limiter. |
-| **LOW** | No rate limiting on password change | `auth-routes.ts:112-121`, `user-routes.ts:28-45` | The `PUT /api/auth/me/password` and `PUT /api/users/me/password` endpoints are not rate-limited. An attacker with a stolen session could brute-force the `currentPassword` field. | Add rate limiting to password-change endpoints. |
+**Description:** The `helmet` package is **not in `package.json`** and no security headers are set anywhere in the HTTP layer. The following headers are all missing:
 
----
+| Header | Status | Risk |
+|--------|--------|------|
+| `X-Content-Type-Options: nosniff` | Missing | MIME-type sniffing can lead to XSS |
+| `X-Frame-Options: DENY` | Missing | Clickjacking on admin panels |
+| `Strict-Transport-Security` | Missing | Downgrade attacks (if HTTPS ever used) |
+| `Content-Security-Policy` | Missing | XSS via injected scripts |
+| `X-XSS-Protection` | Missing | Legacy XSS filter |
+| `Referrer-Policy` | Missing | Token leakage via Referer header |
+| `Permissions-Policy` | Missing | Feature abuse (camera, microphone) |
 
-## 5. Password Policy
-
-### Findings
-
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **CRITICAL** | Extremely weak password policy (4 characters minimum) | `auth-service.ts:81`, `auth-service.ts:171` | `createUser` and `updatePassword` only require `password.length < 4`. This allows trivially brute-forceable passwords like `1234`, `abcd`, etc. | Enforce a minimum of 8 characters (NIST SP 800-63B recommends 8+). Consider requiring at least 12 characters for admin/superadmin roles. |
-| **HIGH** | Inconsistent password policies across endpoints | `auth-routes.ts:165-166` vs `auth-service.ts:81` | The commissioning step 2 route enforces 8 characters for the Super Admin password, but the general `createUser` and `updatePassword` functions only require 4 characters. An admin creating a new user via the API can set a 4-character password. | Centralize password validation into a single function. Apply the same minimum (8+) everywhere. |
-| **MEDIUM** | No password complexity requirements | `auth-service.ts:81` | No check for uppercase, lowercase, digits, or special characters. No check against common passwords list. | Add complexity requirements or use a password-strength estimator (e.g., `zxcvbn`). At minimum, check against a list of the top 10,000 common passwords. |
-| **LOW** | No maximum password length | `auth-service.ts:81` | No upper bound on password length. Extremely long passwords (e.g., 1 MB) could cause Argon2 to consume excessive memory/time, enabling a denial-of-service. | Set a maximum password length (e.g., 128 characters). |
-
----
-
-## 6. Token Refresh Mechanism
-
-### Findings
-
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **MEDIUM** | No token refresh mechanism | N/A | There is no refresh token or token renewal endpoint. When the JWT expires (default 24h), the user must re-authenticate with username/password. This incentivizes very long JWT lifetimes and poor UX. | Implement a refresh token flow: issue a short-lived access token (15-30 min) and a long-lived refresh token (e.g., 7 days, stored securely, rotated on use). The refresh token should be a separate DB-backed opaque token. |
-
----
-
-## 7. Logout / Session Revocation
-
-### What's good
-- Logout endpoint exists at `POST /api/auth/logout` (`auth-routes.ts:85-94`).
-- It correctly sets `is_revoked = 1` on the session record.
-- `authenticate` middleware verifies the session is not revoked on every request (`middleware.ts:33-35`).
-
-### Findings
-
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **HIGH** | JWT remains valid after logout until natural expiry | `auth-routes.ts:85-94` | While the session is revoked in the DB, the JWT itself remains cryptographically valid. If a service or middleware ever skips the session DB check (e.g., `optionalAuth`, a microservice, a WebSocket handler), the token can still be used. | This is mitigated by the DB check in `authenticate`, but ensure **all** auth paths (including WebSocket and `optionalAuth`) validate against the session DB. Consider shorter JWT lifetimes + refresh tokens. |
-| **MEDIUM** | No "logout all devices" feature | N/A | There is no way for a user to revoke all their sessions at once. If a user suspects compromise, they cannot force-logout all other sessions. | Add `POST /api/auth/logout-all` that runs `UPDATE sessions SET is_revoked = 1 WHERE user_id = ?`. |
-| **LOW** | Logout does not clear expired session records | `auth-routes.ts:85-94` | Logout only sets `is_revoked = 1` but doesn't remove the session. Combined with no cleanup job, this leads to unbounded table growth. | Add periodic session cleanup (see Session Management section). |
+**Recommended Fix:**
+```bash
+npm install helmet
+```
+```ts
+import helmet from 'helmet';
+// In createApp(), before routes:
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+    },
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+}));
+```
 
 ---
 
-## 8. Additional Security Findings
+## 3. Input Validation
 
-| Severity | Finding | File:Line | Description | Recommendation |
-|----------|---------|-----------|-------------|----------------|
-| **HIGH** | CORS is fully open | `server.ts:19` | `app.use(cors())` allows requests from **any** origin with **any** method and headers. This permits cross-site request attacks from malicious websites. | Configure CORS with a specific `origin` allowlist appropriate for the deployment environment. For an embedded device, this might be the device's own IP/hostname. |
-| **HIGH** | Admin can reset any user's password without knowing the current one | `user-routes.ts:89-93` | `PUT /api/users/:id/password` allows an admin to set a new password for any user without supplying the current password. While admin password reset is a legitimate feature, it should be restricted to Super Admins only (not regular Admins), and it should force-logout the affected user. | Restrict to `requireSuperAdmin` (not `requireAdmin`), and revoke all sessions for the target user after reset. |
-| **HIGH** | Admin can escalate any user to ADMINISTRATOR role | `user-routes.ts:82-86` | The `PUT /api/users/:id/role` endpoint uses `requireAdmin`, which means an ADMINISTRATOR can promote other users to ADMINISTRATOR. The `updateUserRole` function only blocks escalation to SUPER_ADMINISTRATOR. | Add a check: only SUPER_ADMINISTRATORs should be able to assign the ADMINISTRATOR role. |
-| **MEDIUM** | Sensitive data in JWT payload | `auth-service.ts:55-57` | The JWT payload includes `username` and `role`. While not secret, the `role` in the token is trusted by the client. If a user's role is changed, the old JWT still carries the old role until expiry. The server-side middleware re-reads the DB for session validation but trusts `req.user.role` from the JWT for authorization checks. | Either (a) look up the user's current role from DB in the middleware instead of trusting the JWT claim, or (b) revoke all sessions on role change so the user must re-authenticate. |
-| **MEDIUM** | `DELETE FROM users WHERE role = 'SUPER_ADMINISTRATOR'` deletes ALL super admins | `auth-service.ts:279` | `resetSuperAdmin` deletes **all** super admin accounts before creating the new one. If there were multiple super admins (e.g., from a bug or direct DB edit), this nukes them all. | This is likely intentional for a "factory reset" flow but should be called out as a destructive operation. Add a confirmation step or limit to a single super admin by design. |
-| **MEDIUM** | No HTTPS enforcement | `server.ts` | The server creates an HTTP-only Express app. JWTs are transmitted in plaintext over HTTP. On a local network (pool controller), this may be acceptable, but any network sniffer can capture tokens. | For production, enforce HTTPS or document that the system is intended for isolated networks only. |
-| **MEDIUM** | Duplicate password change endpoints | `auth-routes.ts:112-121`, `user-routes.ts:28-45` | Two separate endpoints handle self-password-change (`PUT /api/auth/me/password` and `PUT /api/users/me/password`). The `user-routes.ts` version re-implements password verification inline rather than calling `authService.updatePassword` with `currentPassword`. Code duplication increases the risk of inconsistent security logic. | Consolidate into a single endpoint. Remove the duplicate. |
-| **LOW** | Audit log does not consistently capture `sourceIp` | `audit.ts:10`, various callers | Many `auditLog()` calls pass `undefined` for `sourceIp`. The login audit captures it, but user creation, role changes, etc., do not. | Pass `req.ip` through all audit-logging calls for forensic traceability. |
-| **LOW** | `50mb` JSON body limit | `server.ts:20` | `express.json({ limit: '50mb' })` is very large. A malicious client could send a 50 MB JSON payload to any endpoint, consuming server memory. | Reduce to a reasonable limit (e.g., `1mb` for most API routes, `50mb` only for specific upload endpoints). |
-| **LOW** | Wi-Fi password stored in plaintext | `auth-routes.ts:201` | `wifiPassword` from commissioning step 3 is stored in `system_config` as plaintext. | Document this as a known limitation. If the DB file is compromised, the Wi-Fi credentials are exposed. Consider encrypting sensitive config values at rest. |
+### Finding SEC-03: No Schema Validation on Request Bodies (Multiple Endpoints)
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **Files** | All route files |
+| **Lines** | Throughout |
+
+**Description:** Request bodies are destructured and used directly with minimal ad-hoc validation. There is no schema validation library (e.g., `zod`, `joi`, `express-validator`). While parameterized SQL queries protect against SQL injection, unvalidated body fields are passed directly to service functions. Specific examples:
+
+- `auth-routes.ts:58` — `req.body` destructured for `/register` with no type/length checks on `email`
+- `auth-routes.ts:68-69` — `/login` does not validate `username`/`password` are strings before passing to `authService.login()`
+- `admin-routes.ts:53` — `POST /devices` passes `macAddress`, `deviceName`, `deviceType` with no format validation
+- `admin-routes.ts:86-88` — `POST /communication` passes `protocol`, `name`, `configData` without schema validation
+- `user-routes.ts:76-77` — `POST /users` passes `role` from body directly — a non-admin could potentially supply `SUPER_ADMINISTRATOR` if the service layer doesn't re-check (it does, partially)
+- `workout-routes.ts:141-178` — `POST /programs` has the best validation of all routes, but other workout endpoints are less rigorous
+
+No endpoint uses a dedicated validation/sanitization library.
+
+**Recommended Fix:** Introduce `zod` or `joi` for request body schema validation at the route handler level. Define schemas per-endpoint and validate before any business logic executes.
 
 ---
 
-## Summary of Findings by Severity
+### Finding SEC-04: No Sanitization of String Inputs Returned in Responses
 
-| Severity | Count |
-|----------|-------|
-| CRITICAL | 1 |
-| HIGH | 7 |
-| MEDIUM | 10 |
-| LOW | 7 |
-| INFO | 1 |
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **Files** | All route files |
+| **Lines** | Throughout |
 
-### Critical
-1. **4-character minimum password length** — trivially brute-forceable.
+**Description:** User-supplied strings (e.g., `displayName`, `deviceName`, `name`) are stored and returned verbatim in JSON responses. While this is generally safe for JSON API responses (XSS risk is primarily in HTML rendering), if any of these values are ever rendered in HTML (e.g., in the SPA served from `public/`), XSS is possible. The SVG upload path in `graphics-routes.ts:68` parses and stores raw SVG content, which can contain embedded JavaScript.
 
-### High
-1. No JWT algorithm pinning — `alg: "none"` attack possible.
-2. No minimum JWT secret length enforcement.
-3. No session invalidation on password change.
-4. No session invalidation on user disable.
-5. No per-account brute-force protection on login.
-6. CORS fully open (`cors()` with no config).
-7. Admin can reset any user's password without current password and without revoking sessions.
+**Recommended Fix:**
+- Sanitize SVG uploads by stripping `<script>`, `onload`, and other event handlers.
+- Consider HTML-entity-encoding user-supplied strings before storage, or ensure the client always escapes them.
 
-### Top 3 Recommended Immediate Actions
-1. **Pin JWT algorithm** to `HS256` in both `sign()` and `verify()`.
-2. **Raise minimum password length** to 8 characters across all code paths.
-3. **Invalidate all sessions** when a user's password is changed or account is disabled.
+---
+
+### Finding SEC-05: SQL Queries Use Parameterized Statements — No Raw SQL Injection
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **INFO (Positive)** |
+| **Files** | All files using `getDb()` |
+
+**Description:** All SQL queries use `better-sqlite3` prepared statements with `?` placeholders. No string concatenation of user input into SQL was found. The dynamic `WHERE` clause building in `audit.ts:50` and `workout-routes.ts:113-117` both use parameterized arrays correctly.
+
+---
+
+## 4. Path Traversal
+
+### Finding SEC-06: Logo Type Parameter Not Validated in Public Endpoint
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/http/server.ts` |
+| **Line** | 70-81 |
+| **Code** | `const type = req.params.type as 'primary' \| 'secondary' \| 'favicon' \| 'splash';` |
+
+**Description:** The `/api/logos/:type` public endpoint casts the `type` parameter to a union type via TypeScript, but this provides no runtime validation. The actual validation depends on what `brandingService.getLogo(type)` does internally. If `getLogo` uses the type to construct a file path, this could be a traversal vector. The admin route `POST /admin/logos/:type` at `admin-routes.ts:294-307` does validate against a whitelist (`validTypes`), but the public routes at `server.ts:70` and `admin-routes.ts:284` do not.
+
+**Recommended Fix:** Add runtime validation of the `type` parameter against the known whitelist in all logo-serving routes:
+```ts
+const validTypes = ['primary', 'secondary', 'favicon', 'splash'];
+if (!validTypes.includes(req.params.type)) {
+  return res.status(400).json({ ... });
+}
+```
+
+---
+
+### Finding SEC-07: No Path Traversal Risk in Static File Serving
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **INFO (Positive)** |
+| **File** | `server/src/http/server.ts` |
+| **Lines** | 129-140 |
+
+**Description:** Static file serving uses `express.static(publicPath)` with a resolved absolute path, and the SPA fallback uses `path.join(publicPath, 'index.html')` with a hardcoded filename. No user input is used to construct file paths for the static file server. This is safe.
+
+---
+
+## 5. Rate Limiting
+
+### Finding SEC-08: Rate Limiting Only on Auth Routes — All Other Endpoints Unprotected
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/http/routes/auth-routes.ts` |
+| **Lines** | 14-36 |
+
+**Description:** Three rate limiters are defined, all exclusively in `auth-routes.ts`:
+
+| Limiter | Window | Max | Applied To |
+|---------|--------|-----|------------|
+| `authRateLimiter` | 15 min | 20 | `/login`, `/reset-super-admin` |
+| `registerRateLimiter` | 1 hour | 10 | `/register` |
+| `commissionRateLimiter` | 15 min | 5 | `/commission/step1-codes` only |
+
+**Missing rate limiting on:**
+- All `/api/admin/*` endpoints (device management, config import/export, branding, i18n, audit log, WiFi, communication, tags, feature flags, layouts)
+- All `/api/users/*` endpoints (user CRUD, password changes, profile photo upload)
+- All `/api/workouts/*` endpoints (workout start/stop/pause, program CRUD, history, stats)
+- All `/api/graphics/*` endpoints (graphic listing, upload, file serving)
+- `/api/health`, `/api/features`, `/api/branding`, `/api/logos/:type`, `/api/i18n/*`
+- Commissioning steps 2-5 (only step 1 has the limiter)
+- The 50MB graphics upload endpoint (`POST /api/graphics/`) has no rate limiting
+
+**Recommended Fix:** Add a global rate limiter as baseline protection, plus stricter per-route limiters for sensitive operations:
+```ts
+// Global baseline
+app.use('/api/', rateLimit({ windowMs: 60_000, max: 100 }));
+// Stricter for uploads
+router.post('/', authenticate, requireRole(...), uploadLimiter, upload.single('file'), ...);
+```
+
+---
+
+## 6. Error Handling
+
+### Finding SEC-09: Stack Traces Logged but Not Leaked to Clients
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **INFO (Positive)** |
+| **File** | `server/src/http/server.ts` |
+| **Lines** | 143-156 |
+
+**Description:** The global error handler correctly differentiates between `AppError` (which returns structured error codes/messages) and unexpected errors (which log the stack trace server-side but return a generic "Internal server error" to the client). This is good practice.
+
+---
+
+### Finding SEC-10: WebSocket Error Messages May Leak Internal Details
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/websocket/ws-handler.ts` |
+| **Lines** | 247-248 |
+| **Code** | `this.send(client.ws, { type: 'command_error', payload: { command, message: err.message } });` |
+
+**Description:** When a WebSocket command throws an error, the raw `err.message` is sent to the client. If the error originates from the database layer or an unexpected exception, it could leak internal details (table names, column names, etc.).
+
+**Recommended Fix:** Wrap command error responses in a safe error handler that only passes through known `AppError` messages and replaces unexpected errors with a generic message.
+
+---
+
+## 7. File Upload
+
+### Finding SEC-11: No MIME Type Validation on File Uploads
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **Files** | `admin-routes.ts`, `user-routes.ts`, `graphics-routes.ts` |
+| **Lines** | admin:20, user:8, graphics:9 |
+
+**Description:** Three `multer` instances are configured:
+
+| Instance | Location | Size Limit | MIME Filter |
+|----------|----------|------------|-------------|
+| `logoUpload` | `admin-routes.ts:20` | 5 MB | **None** |
+| `profileUpload` | `user-routes.ts:8` | 2 MB | **None** |
+| `upload` (graphics) | `graphics-routes.ts:9` | 50 MB | **None** |
+
+All three use `multer.memoryStorage()` with size limits but **no `fileFilter`** to validate MIME types. This means:
+- A user could upload an executable, HTML file, or malicious SVG as a "logo" or "profile photo"
+- The 50 MB graphics upload is especially concerning — large files held in memory could be used for DoS
+
+**Recommended Fix:**
+```ts
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp', 'image/x-icon'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+```
+
+---
+
+### Finding SEC-12: SVG Upload Allows Stored XSS via Embedded Scripts
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **HIGH** |
+| **File** | `server/src/http/routes/graphics-routes.ts` |
+| **Lines** | 64-69 |
+| **Code** | `svgContent = file.toString('utf-8');` |
+
+**Description:** SVG files are uploaded, stored as raw UTF-8 strings, and served back with `Content-Type: image/svg+xml` (`graphics-routes.ts:42`). SVG files can contain `<script>` tags, `onload` attributes, and other JavaScript vectors. When served with the SVG MIME type and no `Content-Security-Policy` header, the browser will execute embedded JavaScript.
+
+Combined with:
+- No CSP header (SEC-02)
+- No MIME type validation (SEC-11)
+- Public unauthenticated access to graphic files (`GET /:id/file` at line 37 has no auth)
+
+This creates a stored XSS attack chain: upload a malicious SVG → anyone visiting the graphic URL executes arbitrary JavaScript.
+
+**Recommended Fix:**
+1. Sanitize SVG content on upload using a library like `DOMPurify` (with jsdom) or `sanitize-svg`
+2. Serve SVGs with `Content-Disposition: attachment` or via a sandboxed iframe
+3. Add `Content-Security-Policy: script-src 'none'` to SVG responses
+4. Implement CSP globally (SEC-02)
+
+---
+
+### Finding SEC-13: Graphics File Endpoint is Fully Unauthenticated
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/http/routes/graphics-routes.ts` |
+| **Line** | 37 |
+| **Code** | `router.get('/:id/file', (req, res, next) => { ... });` |
+
+**Description:** The `GET /api/graphics/:id/file` endpoint serves uploaded graphic binary data with no authentication whatsoever. Combined with the SVG XSS issue (SEC-12), anyone on the network can access any uploaded graphic file. The listing endpoints (`GET /` and `GET /:id`) use `optionalAuth`, meaning they also work without authentication.
+
+**Recommended Fix:** Require at least `optionalAuth` with appropriate access control, or add `Content-Disposition: attachment` headers to prevent in-browser rendering of uploaded files.
+
+---
+
+## 8. Static File Serving
+
+### Finding SEC-14: Static File Serving is Properly Scoped
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **INFO (Positive)** |
+| **File** | `server/src/http/server.ts` |
+| **Lines** | 129-140 |
+
+**Description:** `express.static()` is called with a resolved absolute path (`path.resolve(__dirname, '../../public')`), which prevents directory traversal above the public root. The SPA fallback correctly filters API routes before falling through to `index.html`. This is safe.
+
+---
+
+## 9. WebSocket Authentication
+
+### Finding SEC-15: WebSocket Connections Allow Unauthenticated Access to Sensitive Data
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **HIGH** |
+| **File** | `server/src/websocket/ws-handler.ts` |
+| **Lines** | 56-92 |
+
+**Description:** WebSocket connections are accepted from **any client** with or without authentication. The token in the query string is optional — if missing or invalid, the client is still connected as a "guest." Guest clients immediately receive:
+
+1. **Active workout state** (line 85): `workoutEngine.getActiveWorkout()`
+2. **Pool ID** (line 86): `config.poolId`
+3. **Connection status** (line 90): MQTT, Modbus, PLC heartbeat status
+4. **All workout broadcasts** (lines 291-306): Every workout event (start, stop, speed change, tick) is broadcast to ALL clients, including unauthenticated ones
+5. **Safety stop alerts** (lines 323-331): Broadcast to all clients
+
+Only tag subscriptions and commands require authentication. The `keepalive` and `get_workout` message types work without auth.
+
+**Recommended Fix:**
+- Require authentication for WebSocket connections, or at minimum limit what data is broadcast to unauthenticated clients
+- Validate the token's session against the database (the HTTP `authenticate` middleware checks session revocation, but the WS handler only calls `verifyToken()` which only checks JWT signature/expiry — a revoked session's token still works over WebSocket)
+
+---
+
+### Finding SEC-16: WebSocket Token in Query String Exposes JWT in Logs
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/websocket/ws-handler.ts` |
+| **Lines** | 57-58 |
+| **Code** | `const token = url.searchParams.get('token');` |
+
+**Description:** The WebSocket authentication token is passed as a URL query parameter (`?token=<JWT>`). Query string parameters are commonly logged by proxies, web servers, and browser history. This increases the risk of JWT token leakage.
+
+**Recommended Fix:** Accept the token as the first message after connection (the "authenticate" message type already exists), or use the `Sec-WebSocket-Protocol` header to pass the token.
+
+---
+
+### Finding SEC-17: WebSocket Does Not Validate Session Revocation
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **HIGH** |
+| **File** | `server/src/websocket/ws-handler.ts` |
+| **Lines** | 62-63, 177-187 |
+
+**Description:** Both the initial connection authentication and the `authenticate` message type call `verifyToken(token)`, which only validates the JWT signature and expiry. It does **not** check if the session has been revoked in the database (the `sessions.is_revoked` flag). This means:
+
+1. A user logs out (session is revoked via `POST /api/auth/logout`)
+2. Their JWT is still valid until it expires (24 hours by default)
+3. The WebSocket handler will accept this revoked token and grant full authenticated access
+
+The HTTP `authenticate` middleware correctly checks session revocation (middleware.ts:33-38), but the WebSocket handler bypasses this entirely.
+
+**Recommended Fix:** After `verifyToken()`, check the session table:
+```ts
+const db = getDb();
+const session = db.prepare(
+  "SELECT * FROM sessions WHERE token = ? AND is_revoked = 0 AND expires_at > datetime('now')"
+).get(payload.sessionId);
+if (!session) { /* reject authentication */ }
+```
+
+---
+
+## 10. Additional Findings
+
+### Finding SEC-18: JSON Body Size Limit Set to 50 MB
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/http/server.ts` |
+| **Line** | 20 |
+| **Code** | `app.use(express.json({ limit: '50mb' }));` |
+
+**Description:** The global JSON body parser accepts up to 50 MB. This is extremely large for an API that primarily handles small JSON payloads. An attacker could send many 50 MB requests concurrently to exhaust server memory (this is an embedded device with limited resources).
+
+The 50 MB limit was likely set to support the config import (`POST /api/admin/config/import`) or graphics metadata, but these endpoints should have their own size limits.
+
+**Recommended Fix:** Set a conservative global limit (e.g., 1 MB) and override per-route where needed:
+```ts
+app.use(express.json({ limit: '1mb' }));
+// For config import:
+router.post('/config/import', authenticate, requireSuperAdmin, express.json({ limit: '10mb' }), ...);
+```
+
+---
+
+### Finding SEC-19: Weak Password Policy
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/auth/auth-service.ts` |
+| **Lines** | 81, 171 |
+
+**Description:** Minimum password length is only **4 characters** (`auth-service.ts:81,171`). During commissioning step 2, the Super Admin password requires 8 characters (`auth-routes.ts:165`), but the general `createUser` and `updatePassword` functions only require 4. The Administrator account created during commissioning also only requires 4 characters (`auth-routes.ts:172`).
+
+**Recommended Fix:** Enforce a minimum of 8 characters for all passwords, with additional complexity requirements for admin/super-admin roles.
+
+---
+
+### Finding SEC-20: Health Endpoint Exposes Server Uptime
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/http/server.ts` |
+| **Lines** | 30-40 |
+
+**Description:** The `/api/health` endpoint exposes `process.uptime()` and server version to unauthenticated clients. While useful for monitoring, this leaks operational information (how long the server has been running, exact version).
+
+---
+
+### Finding SEC-21: Dashboard Exposes `process.memoryUsage()` and Client Details
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/http/routes/admin-routes.ts` |
+| **Lines** | 25-44 |
+
+**Description:** The `/api/admin/dashboard` endpoint (admin-only, properly authenticated) exposes detailed memory usage (`process.memoryUsage()`) and the full WebSocket client list including IP addresses. This is appropriate for admin-level access but should be noted.
+
+---
+
+### Finding SEC-22: `optionalAuth` in Middleware Does Not Check Session Revocation
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/auth/middleware.ts` |
+| **Lines** | 47-58 |
+
+**Description:** The `optionalAuth` middleware calls `verifyToken()` but does not check session revocation in the database (unlike the full `authenticate` middleware). A revoked token would still populate `req.user` on routes using `optionalAuth`. Currently used by `GET /api/workouts/active` and several graphics endpoints.
+
+**Recommended Fix:** Either check session revocation in `optionalAuth` or document the trust boundary explicitly.
+
+---
+
+### Finding SEC-23: Admin Password Reset Does Not Require Current Password
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/http/routes/user-routes.ts` |
+| **Lines** | 89-94 |
+
+**Description:** The admin endpoint `PUT /api/users/:id/password` allows administrators to change any user's password without supplying the current password. While this is a common admin feature, combined with the weak password policy (SEC-19), it increases the risk of privilege abuse.
+
+---
+
+### Finding SEC-24: WiFi Password Stored and Transmitted in Plaintext
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **MEDIUM** |
+| **File** | `server/src/http/routes/auth-routes.ts` |
+| **Lines** | 197-202, 209-214 |
+
+**Description:** During commissioning step 3, the WiFi AP password is stored as a plaintext `system_config` value via `setSystemConfig('wifi_password', wifiPassword || '')`. The default fallback password is hardcoded as `'swimex2024'` at line 212. This password is also readable via the admin WiFi endpoint (`GET /api/admin/wifi`).
+
+**Recommended Fix:** Encrypt WiFi passwords at rest. Remove the hardcoded default password.
+
+---
+
+### Finding SEC-25: `require()` Used Dynamically in Request Handlers
+
+| Field | Value |
+|-------|-------|
+| **Severity** | **LOW** |
+| **File** | `server/src/http/server.ts` |
+| **Lines** | 45, 72, 85, 100, 110 |
+
+**Description:** Several inline handlers use `require()` to lazily import services at runtime. While not a direct security issue, this pattern makes it harder to audit the dependency graph and could mask import errors until a route is first hit.
+
+---
+
+## Summary Table
+
+| ID | Severity | Category | Finding |
+|----|----------|----------|---------|
+| SEC-01 | **HIGH** | CORS | Fully permissive `cors()` with no origin restriction |
+| SEC-02 | **HIGH** | Headers | No security headers (no Helmet, no CSP, no HSTS, etc.) |
+| SEC-03 | MEDIUM | Validation | No schema validation library on request bodies |
+| SEC-04 | LOW | Validation | No sanitization of user strings in responses |
+| SEC-05 | INFO+ | SQL | Parameterized queries — no SQL injection |
+| SEC-06 | LOW | Path Traversal | Logo type parameter not validated in public routes |
+| SEC-07 | INFO+ | Path Traversal | Static file serving properly scoped |
+| SEC-08 | MEDIUM | Rate Limiting | Only auth routes have rate limiting |
+| SEC-09 | INFO+ | Errors | Stack traces logged but not leaked to clients |
+| SEC-10 | LOW | Errors | WebSocket error messages may leak internals |
+| SEC-11 | MEDIUM | Upload | No MIME type validation on file uploads |
+| SEC-12 | **HIGH** | Upload/XSS | SVG upload allows stored XSS via embedded scripts |
+| SEC-13 | MEDIUM | Auth | Graphics file endpoint is fully unauthenticated |
+| SEC-14 | INFO+ | Static | Static file serving properly scoped |
+| SEC-15 | **HIGH** | WebSocket | Unauthenticated WS clients receive sensitive broadcasts |
+| SEC-16 | MEDIUM | WebSocket | JWT in query string (logged by proxies) |
+| SEC-17 | **HIGH** | WebSocket | WebSocket does not validate session revocation |
+| SEC-18 | MEDIUM | DoS | JSON body limit set to 50 MB |
+| SEC-19 | MEDIUM | Auth | Minimum password length is only 4 characters |
+| SEC-20 | LOW | Info Leak | Health endpoint exposes uptime and version |
+| SEC-21 | LOW | Info Leak | Dashboard exposes memory usage and client IPs |
+| SEC-22 | LOW | Auth | `optionalAuth` doesn't check session revocation |
+| SEC-23 | MEDIUM | Auth | Admin password reset doesn't require current password |
+| SEC-24 | MEDIUM | Secrets | WiFi password stored/transmitted in plaintext |
+| SEC-25 | LOW | Code Quality | Dynamic `require()` in request handlers |
+
+### Risk Distribution
+
+- **HIGH:** 5 findings (SEC-01, SEC-02, SEC-12, SEC-15, SEC-17)
+- **MEDIUM:** 8 findings (SEC-03, SEC-08, SEC-11, SEC-13, SEC-16, SEC-18, SEC-19, SEC-23, SEC-24)
+- **LOW:** 6 findings (SEC-04, SEC-06, SEC-10, SEC-20, SEC-21, SEC-22, SEC-25)
+- **INFO (Positive):** 4 findings (SEC-05, SEC-07, SEC-09, SEC-14)
+
+### Priority Remediation Order
+
+1. **SEC-02** — Install and configure Helmet.js (quick win, broad impact)
+2. **SEC-12** — Sanitize SVG uploads or serve with safe headers (stored XSS)
+3. **SEC-01** — Restrict CORS to known origins
+4. **SEC-17** — Add session revocation check to WebSocket auth
+5. **SEC-15** — Limit data broadcast to unauthenticated WebSocket clients
+6. **SEC-11** — Add MIME type validation to all multer instances
+7. **SEC-08** — Add global and per-route rate limiting
+8. **SEC-18** — Reduce global JSON body limit to 1 MB
+9. **SEC-03** — Add schema validation (zod/joi)
+10. **SEC-19** — Strengthen password policy
