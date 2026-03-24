@@ -28,12 +28,32 @@ This topology isolates PLC traffic from client traffic and ensures reliable pool
 
 | Platform | Requirements |
 |----------|--------------|
-| Linux | systemd, openssl, glibc 2.31+ |
-| Windows | .NET Runtime (included in installer), Administrator privileges |
+| Linux (portable) | glibc 2.28+ (all deps bundled) |
+| Linux (package install) | systemd, openssl, glibc 2.28+ |
+| Windows (portable EXE) | Windows 10/11 x64 (all deps bundled) |
+| Windows (from source) | Node.js 18+, Administrator privileges |
 
 ## Linux Installation
 
-### Supported Distributions
+### Linux Portable Package (Recommended)
+
+The easiest Linux option — no Node.js installation required. The release tarball includes a bundled Node.js binary.
+
+```bash
+# Download
+wget https://github.com/<org>/swimex-edge/releases/download/<version>/swimex-edge-server-<version>-linux-x64.tar.gz
+
+# Extract and run
+tar -xzf swimex-edge-server-*-linux-x64.tar.gz
+cd swimex-edge-server-*-linux-x64
+./swimex-edge-server.sh
+```
+
+Works on any x64 Linux with glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+, Fedora 29+, SUSE 15.1+, Arch).
+
+To install as a systemd service: `sudo bash install-service.sh`
+
+### Supported Distributions (Package Install)
 
 | Distribution | Package Format | Versions |
 |--------------|----------------|----------|

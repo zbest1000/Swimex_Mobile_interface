@@ -13,9 +13,10 @@ This manual covers everything you need to know to install, set up, and use the S
 3. [Installation](#3-installation)
    - [Option A: Quick Install (Recommended)](#option-a-quick-install)
    - [Option B: Docker Install](#option-b-docker-install)
-   - [Option C: Windows EXE (Portable)](#option-c-windows-exe-portable)
-   - [Option D: Windows Install (From Source)](#option-d-windows-install-from-source)
-   - [Option E: Raspberry Pi](#option-e-raspberry-pi)
+   - [Option C: Linux Portable (No Install)](#option-c-linux-portable-no-install)
+   - [Option D: Windows EXE (Portable)](#option-d-windows-exe-portable)
+   - [Option E: Windows Install (From Source)](#option-e-windows-install-from-source)
+   - [Option F: Raspberry Pi](#option-f-raspberry-pi)
 4. [First-Time Setup](#4-first-time-setup)
 5. [Logging In](#5-logging-in)
 6. [EDGE Server Access](#6-edge-server-access)
@@ -86,9 +87,10 @@ Choose the installation option that matches your environment. All options produc
 |--------|----------|----------|
 | **A — Quick Install** | Linux / Mac development | Node.js 18+ |
 | **B — Docker** | Production, any OS with Docker | Docker Engine + Compose |
-| **C — Windows EXE** | Windows deployment (no Node install) | Windows 10/11 x64 |
-| **D — Windows (Source)** | Windows developers | Node.js 18+ |
-| **E — Raspberry Pi** | Dedicated pool-side hardware | RPi 3B+/4/5, Raspberry Pi OS |
+| **C — Linux Portable** | Any Linux server (no Node install) | Any x64 Linux (glibc 2.28+) |
+| **D — Windows EXE** | Windows deployment (no Node install) | Windows 10/11 x64 |
+| **E — Windows (Source)** | Windows developers | Node.js 18+ |
+| **F — Raspberry Pi** | Dedicated pool-side hardware | RPi 3B+/4/5, Raspberry Pi OS |
 
 ---
 
@@ -190,7 +192,61 @@ Key environment variables:
 
 ---
 
-### Option C: Windows EXE (Portable)
+### Option C: Linux Portable (No Install)
+
+The Linux portable package is self-contained — it bundles a Node.js binary so you don't need to install Node.js or any other runtime. Works on most x64 Linux distributions (Ubuntu, Debian, Fedora, RHEL, CentOS, SUSE, Arch, etc.).
+
+1. Download `swimex-edge-server-<version>-linux-x64.tar.gz` from the [Releases](../../releases) page
+2. Extract anywhere:
+   ```bash
+   tar -xzf swimex-edge-server-*-linux-x64.tar.gz
+   cd swimex-edge-server-*-linux-x64
+   ```
+3. Start the server:
+   ```bash
+   ./swimex-edge-server.sh
+   ```
+4. Open `http://localhost` in your browser (or `http://<server-ip>` from another device)
+5. Default login: **admin** / **admin123**
+
+#### Compatibility
+
+Requires glibc 2.28 or newer. This covers:
+- Ubuntu 18.04+
+- Debian 10+
+- Fedora 29+
+- RHEL / CentOS / Rocky / Alma 8+
+- openSUSE 15.1+
+- Arch Linux (rolling)
+
+#### Changing Ports
+
+```bash
+HTTP_PORT=8080 MODBUS_PORT=5020 ./swimex-edge-server.sh
+```
+
+#### Install as a systemd Service
+
+To run the server on boot:
+
+```bash
+sudo bash install-service.sh
+```
+
+This registers a `swimex-edge` systemd service. Manage with:
+```bash
+sudo systemctl status swimex-edge
+sudo systemctl restart swimex-edge
+sudo journalctl -u swimex-edge -f
+```
+
+#### Running on ARM Linux (non-RPi)
+
+The Linux x64 package is for x86_64 systems. For ARM-based Linux (Orange Pi, NVIDIA Jetson, etc.), use the **Docker** option (which supports `linux/arm64`) or install Node.js manually and use the generic tarball (Option A).
+
+---
+
+### Option D: Windows EXE (Portable)
 
 The Windows release is a self-contained ZIP — no Node.js installation required. It bundles a portable `node.exe` alongside the compiled server.
 
@@ -213,7 +269,7 @@ Edit `swimex-edge-server.bat` and change `set HTTP_PORT=80` to your desired port
 
 ---
 
-### Option D: Windows Install (From Source)
+### Option E: Windows Install (From Source)
 
 If you prefer to install from source with Node.js:
 
@@ -242,7 +298,7 @@ If you prefer to install from source with Node.js:
 
 ---
 
-### Option E: Raspberry Pi
+### Option F: Raspberry Pi
 
 The Raspberry Pi package is optimized for headless RPi deployments (pool-side edge hardware). Tested on RPi 3B+, 4B, and 5 running Raspberry Pi OS (Lite or Desktop, 32-bit or 64-bit).
 
@@ -778,8 +834,9 @@ SwimEx EDGE uses GitHub Actions for automated builds. Every release produces mul
 
 | Artifact | Platform | Description |
 |----------|----------|-------------|
-| `swimex-edge-server-<tag>.tar.gz` | Linux (generic) | Compiled JS + assets. Requires Node.js 18+ on host. |
-| `swimex-edge-server-<tag>.zip` | Linux / Mac / Windows | Same as above, ZIP format. |
+| `swimex-edge-server-<tag>-linux-x64.tar.gz` | Linux x64 | Self-contained package with embedded Node.js. Run `./swimex-edge-server.sh`. |
+| `swimex-edge-server-<tag>.tar.gz` | Linux / Mac (generic) | Compiled JS + assets. Requires Node.js 18+ on host. |
+| `swimex-edge-server-<tag>.zip` | Any OS (generic) | Same as above, ZIP format. |
 | `swimex-edge-server-<tag>-windows-x64.zip` | Windows x64 | Portable package with embedded `node.exe`. No install required. |
 | `swimex-edge-server-<tag>-rpi-arm.tar.gz` | Raspberry Pi (ARM) | Compiled JS + RPi installer script. Runs on RPi 3B+/4/5. |
 | Docker image | `linux/amd64`, `linux/arm64` | Multi-arch image pushed to GHCR or Docker Hub. |
@@ -791,6 +848,7 @@ Builds are triggered via **GitHub Actions → Build and Release → Run workflow
 Required input: **Release tag** (e.g., `v1.2.0`).
 
 Optional toggles:
+- **Build Linux** — produce the self-contained Linux x64 package (default: on)
 - **Build Docker** — push a multi-arch Docker image (default: on)
 - **Build Windows** — produce the Windows EXE portable package (default: on)
 - **Build RPi** — produce the Raspberry Pi ARM package (default: on)
@@ -855,6 +913,13 @@ Every push and pull request to `main` runs the CI workflow which:
 - Make sure Node.js is version 18 or higher: `node --version`
 - Try deleting the `server/data` folder and restarting (this resets the database)
 
+### Linux portable won't start
+
+- Ensure the archive was fully extracted: `tar -xzf swimex-edge-server-*-linux-x64.tar.gz`
+- Make the launcher executable: `chmod +x swimex-edge-server.sh`
+- If you see `GLIBC_X.XX not found`, your Linux is too old. Requires glibc 2.28+ (Ubuntu 18.04+, Debian 10+, RHEL 8+).
+- For port 80, run as root (`sudo ./swimex-edge-server.sh`) or use `HTTP_PORT=8080`
+
 ### Docker container exits immediately
 
 - Check logs: `docker logs swimex-edge`
@@ -897,7 +962,7 @@ A: Yes! While a program is running, you can use the +5/-5 buttons to adjust the 
 A: The pool motor stops immediately (no power = no motor). When power returns, the server restarts automatically (if configured as a service or using Docker). You'll need to manually start a new workout.
 
 **Q: Can I run this on a Raspberry Pi?**
-A: Yes! Download the RPi ARM package from the Releases page, extract it, and run `sudo bash installer/install.sh`. Works on RPi 3B+, 4B, and 5. See [Option E: Raspberry Pi](#option-e-raspberry-pi) for full instructions.
+A: Yes! Download the RPi ARM package from the Releases page, extract it, and run `sudo bash installer/install.sh`. Works on RPi 3B+, 4B, and 5. See [Option F: Raspberry Pi](#option-f-raspberry-pi) for full instructions.
 
 **Q: How do I update SwimEx EDGE?**
 A: Download the new version, stop the current server, replace the files, and run `bash setup.sh` again (or `docker pull` for Docker). Your data (users, workouts, settings) is preserved in the `data/` folder (or `/data` Docker volume).

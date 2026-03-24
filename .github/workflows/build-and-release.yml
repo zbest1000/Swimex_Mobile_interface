@@ -7,6 +7,11 @@ on:
         description: 'Release tag (e.g. v1.0.0)'
         required: true
         type: string
+      build_linux:
+        description: 'Build self-contained Linux x64 package'
+        required: false
+        type: boolean
+        default: true
       build_docker:
         description: 'Build and push Docker image'
         required: false
@@ -94,6 +99,98 @@ jobs:
           path: |
             swimex-edge-server-${{ inputs.release_tag }}.tar.gz
             swimex-edge-server-${{ inputs.release_tag }}.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────
+  # Linux x64 self-contained package
+  # Bundles portable Node.js binary + compiled app + prod deps
+  # Works on Ubuntu, Debian, Fedora, RHEL, SUSE, Arch, etc.
+  # ──────────────────────────────────────────────────────────
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+    if: ${{ inputs.build_linux }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: server
+        run: npx tsc
+
+      - name: Download portable Node.js for Linux x64
+        run: |
+          NODE_FULL_VERSION="$(node -v | sed 's/^v//')"
+          URL="https://nodejs.org/dist/v${NODE_FULL_VERSION}/node-v${NODE_FULL_VERSION}-linux-x64.tar.xz"
+          echo "Downloading Node.js ${NODE_FULL_VERSION} from ${URL}"
+          curl -fsSL "${URL}" -o node-portable.tar.xz
+          tar -xf node-portable.tar.xz
+          cp "node-v${NODE_FULL_VERSION}-linux-x64/bin/node" node
+
+      - name: Install production dependencies
+        working-directory: server
+        run: |
+          rm -rf node_modules
+          npm ci --production
+
+      - name: Package Linux release
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          PKG="swimex-edge-server-${TAG}-linux-x64"
+          mkdir -p "${PKG}"
+
+          cp node "${PKG}/node"
+          chmod +x "${PKG}/node"
+          cp -r server/dist "${PKG}/"
+          cp -r server/node_modules "${PKG}/"
+          cp -r server/public "${PKG}/"
+          cp -r server/config "${PKG}/"
+          cp -r server/templates "${PKG}/"
+          cp server/package.json "${PKG}/"
+
+          cp server/installer/linux/install.sh "${PKG}/install-service.sh" 2>/dev/null || true
+          cp README.md "${PKG}/" 2>/dev/null || true
+          cp MANUAL.md "${PKG}/" 2>/dev/null || true
+
+          cat > "${PKG}/swimex-edge-server.sh" << 'LAUNCHER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export HTTP_PORT="${HTTP_PORT:-80}"
+          export MODBUS_PORT="${MODBUS_PORT:-502}"
+          export MQTT_PORT="${MQTT_PORT:-1883}"
+          export DATA_DIR="${DATA_DIR:-${SCRIPT_DIR}/data}"
+          export CONFIG_DIR="${CONFIG_DIR:-${SCRIPT_DIR}/config}"
+          mkdir -p "${DATA_DIR}"
+          echo "========================================"
+          echo " SwimEx EDGE Server"
+          echo "========================================"
+          echo " Web UI:  http://0.0.0.0:${HTTP_PORT}"
+          echo " Data:    ${DATA_DIR}"
+          echo " Press Ctrl+C to stop."
+          echo "========================================"
+          exec "${SCRIPT_DIR}/node" "${SCRIPT_DIR}/dist/app/index.js"
+          LAUNCHER
+          chmod +x "${PKG}/swimex-edge-server.sh"
+
+          tar -czf "swimex-edge-server-${TAG}-linux-x64.tar.gz" "${PKG}"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-build
+          path: swimex-edge-server-${{ inputs.release_tag }}-linux-x64.tar.gz
           retention-days: 30
 
   # ──────────────────────────────────────────────────────────
@@ -319,7 +416,7 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-server, build-windows-exe, build-rpi]
+    needs: [build-server, build-linux, build-windows-exe, build-rpi]
     if: ${{ always() && inputs.create_release && needs.build-server.result == 'success' }}
     steps:
       - name: Checkout
@@ -329,6 +426,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: server-build
+          path: release-artifacts/
+
+      - name: Download Linux x64 build
+        if: ${{ inputs.build_linux && needs.build-linux.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x64-build
           path: release-artifacts/
 
       - name: Download Windows build
@@ -364,6 +468,7 @@ jobs:
 
             | Platform | File | Notes |
             |----------|------|-------|
+            | **Linux x64** | `swimex-edge-server-${{ inputs.release_tag }}-linux-x64.tar.gz` | Self-contained with Node.js. Run `./swimex-edge-server.sh`. |
             | **Linux (generic)** | `swimex-edge-server-${{ inputs.release_tag }}.tar.gz` | Requires Node.js 18+. Run `installer/linux/install.sh`. |
             | **Windows x64** | `swimex-edge-server-${{ inputs.release_tag }}-windows-x64.zip` | Self-contained with Node.js. Double-click `swimex-edge-server.bat`. |
             | **Raspberry Pi** | `swimex-edge-server-${{ inputs.release_tag }}-rpi-arm.tar.gz` | For RPi 3/4/5 (ARM). Run `installer/install.sh`. |

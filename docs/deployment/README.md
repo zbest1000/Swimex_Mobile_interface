@@ -8,7 +8,7 @@ The SwimEx EDGE platform consists of two main components:
 
 | Component | Description | Deployment Options |
 |-----------|--------------|-------------------|
-| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Native Linux, Windows EXE, Raspberry Pi, Docker |
+| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Linux portable, Windows EXE, Raspberry Pi, Docker, native (from source) |
 | **EDGE Client** | Android kiosk app for pool control tablets | APK sideload |
 | **Web Client** | Any modern browser on the same network | No installation needed |
 
@@ -28,7 +28,8 @@ The GitHub Actions `Build and Release` workflow produces platform-specific packa
 
 | Artifact | Platform | Contents |
 |----------|----------|----------|
-| `.tar.gz` / `.zip` | Linux (generic) | Compiled JS, assets, installer scripts. Requires Node.js 18+. |
+| `-linux-x64.tar.gz` | Linux x64 | Self-contained package with embedded Node.js binary. Run `./swimex-edge-server.sh`. |
+| `.tar.gz` / `.zip` | Any OS (generic) | Compiled JS, assets, installer scripts. Requires Node.js 18+. |
 | `-windows-x64.zip` | Windows x64 | Self-contained package with embedded `node.exe`. Double-click `.bat` to start. |
 | `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | Compiled JS, assets, RPi installer script. Installs as systemd service. |
 | Docker image | `linux/amd64`, `linux/arm64` | Multi-arch image pushed to GHCR or Docker Hub. |
