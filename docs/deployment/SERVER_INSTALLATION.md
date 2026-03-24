@@ -104,9 +104,25 @@ Service unit file location: `/etc/systemd/system/swimex-edge.service` or `/lib/s
 | OS | Version | Notes |
 |----|---------|-------|
 | Windows 10 | Pro, Enterprise, IoT Enterprise | 64-bit required |
+| Windows 11 | All editions | 64-bit required |
 | Windows Server | 2019, 2022 | Headless deployments |
 
-### .msi Installer
+### Portable EXE Package (Recommended)
+
+The easiest Windows option — no Node.js installation required. The release ZIP includes an embedded `node.exe`.
+
+1. Download `swimex-edge-server-<version>-windows-x64.zip` from the [Releases](https://github.com/<org>/swimex-edge/releases) page.
+2. Extract to a folder (e.g., `C:\SwimEx`).
+3. **Double-click `swimex-edge-server.bat`** to start the server.
+4. Open `http://localhost` in a browser.
+5. Default login: `admin` / `admin123`.
+
+To install as a Windows Service (auto-start on boot):
+
+1. Right-click `install-service.ps1` → **Run with PowerShell** (as Administrator).
+2. Uses [NSSM](https://nssm.cc/) to register the service.
+
+### .msi Installer (Alternative)
 
 1. Download `swimex-edge-server-1.0.0-x64.msi`.
 2. Run as Administrator (right-click, "Run as administrator").
@@ -117,13 +133,10 @@ Service unit file location: `/etc/systemd/system/swimex-edge.service` or `/lib/s
    - Complete installation
 4. The EDGE Server installs as a Windows Service and starts automatically.
 
-### .exe Installer (Alternative)
+### From Source (Developer)
 
-For interactive installations with GUI:
-
-1. Run `swimex-edge-server-setup-1.0.0.exe` as Administrator.
-2. Follow the wizard; options match the .msi installer.
-3. Optionally launch the setup wizard in browser at completion.
+1. Install Node.js 18+ from https://nodejs.org
+2. `cd server && npm install && npm run build && npm start`
 
 ### Windows Service Registration
 
@@ -134,6 +147,63 @@ The installer registers the service as `SwimExEDGE`. Manage via:
 | Services GUI | `services.msc` — locate "SwimEx EDGE Server" |
 | Command line | `sc start SwimExEDGE`, `sc stop SwimExEDGE` |
 | PowerShell | `Start-Service SwimExEDGE`, `Stop-Service SwimExEDGE` |
+
+## Raspberry Pi Installation
+
+### Supported Hardware
+
+| Model | Status | Notes |
+|-------|--------|-------|
+| Raspberry Pi 3B+ | Supported | Minimum viable; 1 GB RAM |
+| Raspberry Pi 4B (2 GB+) | Recommended | Best performance/cost ratio |
+| Raspberry Pi 5 | Supported | Fastest option |
+
+### Supported OS
+
+Raspberry Pi OS (Lite or Desktop), 32-bit or 64-bit. Debian Bookworm or Bullseye.
+
+### Quick Install
+
+```bash
+# Download the RPi release package
+wget https://github.com/<org>/swimex-edge/releases/download/<version>/swimex-edge-server-<version>-rpi-arm.tar.gz
+
+# Extract
+tar -xzf swimex-edge-server-*-rpi-arm.tar.gz
+cd swimex-edge-server-*-rpi-arm
+
+# Run installer (installs Node.js if missing, creates systemd service)
+sudo bash installer/install.sh
+```
+
+### What the Installer Does
+
+1. Checks/installs Node.js 18+ via NodeSource
+2. Copies application to `/opt/swimex-edge`
+3. Installs production npm dependencies
+4. Creates a dedicated `swimex` service user
+5. Reduces GPU memory to 16 MB (headless optimization)
+6. Registers and starts a hardened `systemd` service
+7. Grants `CAP_NET_BIND_SERVICE` for privileged ports (80, 502)
+
+### Managing the Service
+
+```bash
+sudo systemctl status swimex-edge     # Check status
+sudo systemctl restart swimex-edge    # Restart
+sudo systemctl stop swimex-edge       # Stop
+sudo journalctl -u swimex-edge -f     # Live logs
+```
+
+### Headless Setup (No Monitor)
+
+1. Flash Raspberry Pi OS Lite using [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+2. In the imager settings, configure Wi-Fi, enable SSH, set hostname
+3. Boot RPi, SSH in: `ssh pi@<hostname>.local`
+4. Transfer and run the installer
+5. Access the Web UI from any browser on the network
+
+---
 
 ## Post-Installation
 

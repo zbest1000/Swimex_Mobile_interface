@@ -8,8 +8,9 @@ The SwimEx EDGE platform consists of two main components:
 
 | Component | Description | Deployment Options |
 |-----------|--------------|-------------------|
-| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Native (Linux/Windows), Docker |
+| **EDGE Server** | Central control server, MQTT broker, Modbus gateway, web API | Native Linux, Windows EXE, Raspberry Pi, Docker |
 | **EDGE Client** | Android kiosk app for pool control tablets | APK sideload |
+| **Web Client** | Any modern browser on the same network | No installation needed |
 
 ## Deployment Documentation Index
 
@@ -20,6 +21,19 @@ The SwimEx EDGE platform consists of two main components:
 | [CLIENT_INSTALLATION.md](CLIENT_INSTALLATION.md) | Android APK sideload procedure. Permissions, first-launch wizard, kiosk mode configuration. |
 | [COMMISSIONING_GUIDE.md](COMMISSIONING_GUIDE.md) | Full first-run commissioning workflow. Commissioning codes, admin accounts, network config, PLC protocol selection. |
 | [UPGRADE_GUIDE.md](UPGRADE_GUIDE.md) | Upgrade procedures for server and client. Database migrations, backup/restore, rollback. |
+
+## Release Artifacts (CI/CD)
+
+The GitHub Actions `Build and Release` workflow produces platform-specific packages:
+
+| Artifact | Platform | Contents |
+|----------|----------|----------|
+| `.tar.gz` / `.zip` | Linux (generic) | Compiled JS, assets, installer scripts. Requires Node.js 18+. |
+| `-windows-x64.zip` | Windows x64 | Self-contained package with embedded `node.exe`. Double-click `.bat` to start. |
+| `-rpi-arm.tar.gz` | Raspberry Pi (ARM) | Compiled JS, assets, RPi installer script. Installs as systemd service. |
+| Docker image | `linux/amd64`, `linux/arm64` | Multi-arch image pushed to GHCR or Docker Hub. |
+
+See [MANUAL.md](../../MANUAL.md) § 16 (Builds & Releases) for workflow details.
 
 ## Deployment Topology
 
