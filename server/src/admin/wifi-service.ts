@@ -54,10 +54,13 @@ function getDnsmasqConfPath(): string {
   return path.join(config.configDir, 'dnsmasq.conf');
 }
 
-export function getWifiConfigSafe(): Omit<WifiApConfig, 'password'> & { hasPassword: boolean } {
+export function getWifiConfigSafe(): Omit<WifiApConfig, 'password'> & { hasPassword: boolean; passwordMasked: string } {
   const cfg = getWifiConfig();
-  const { password: _pw, ...safe } = cfg;
-  return { ...safe, hasPassword: cfg.password.length > 0 };
+  const { password, ...safe } = cfg;
+  const masked = password.length > 0
+    ? password[0] + '*'.repeat(Math.max(0, password.length - 2)) + (password.length > 1 ? password[password.length - 1] : '')
+    : '';
+  return { ...safe, hasPassword: password.length > 0, passwordMasked: masked };
 }
 
 export function getWifiConfig(): WifiApConfig {
