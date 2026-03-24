@@ -32,9 +32,11 @@ Open the URL shown in the terminal when setup completes.
 On first run, the server creates `superadmin` and `admin` accounts with **randomly generated passwords** printed in the server log.
 
 To find them:
-- **Foreground:** Look at the terminal output during startup
-- **Service:** `sudo journalctl -u swimex-edge | grep password`
-- **Docker:** `docker logs swimex-edge | grep password`
+- **File:** `cat data/.initial-credentials` (in the data directory)
+- **Service:** `sudo cat /var/lib/swimex-edge/.initial-credentials`
+- **Docker:** `docker exec swimex-edge cat /data/.initial-credentials`
+
+Delete the file after saving: `rm data/.initial-credentials`
 
 To set passwords explicitly: `ADMIN_PASS=MyPass SUPERADMIN_PASS=MyPass2 bash setup.sh`
 

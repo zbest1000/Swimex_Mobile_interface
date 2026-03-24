@@ -59,7 +59,7 @@ if [[ "$MODE" == "--docker" ]]; then
   echo ""
   echo -e "${GREEN}${BOLD}  Setup complete!${NC}"
   echo -e "  Web UI:  ${CYAN}http://${LOCAL_IP}${NC}"
-  echo -e "  Login:   Check 'docker compose logs' for generated credentials"
+  echo -e "  Login:   docker exec swimex-edge cat /data/.initial-credentials"
   echo -e "  Manage:  docker compose down | logs -f | restart"
   exit 0
 fi
@@ -215,7 +215,7 @@ EOF
     echo ""
     echo -e "${GREEN}${BOLD}  Setup complete!${NC}"
     echo -e "  Web UI:   ${CYAN}http://${LOCAL_IP}${NC}"
-    echo -e "  Login:    Check 'journalctl -u ${SVC_NAME}' for generated credentials"
+    echo -e "  Login:    sudo cat ${SVC_DATA_DIR}/.initial-credentials"
     echo -e "  Status:   sudo systemctl status ${SVC_NAME}"
     echo -e "  Logs:     sudo journalctl -u ${SVC_NAME} -f"
     echo -e "  Restart:  sudo systemctl restart ${SVC_NAME}"
@@ -261,7 +261,7 @@ LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 echo ""
 echo -e "${GREEN}${BOLD}  Setup complete! Server running.${NC}"
 echo -e "  Web UI:  ${CYAN}http://${LOCAL_IP}:${HTTP_PORT}${NC}"
-echo -e "  Login:   Check the server log output above for generated credentials"
+echo -e "  Login:   cat ${SERVER_DIR}/data/.initial-credentials"
 echo -e "  Stop:    kill ${SERVER_PID}"
 echo ""
 echo -e "  To install as a service:  ${BOLD}sudo bash setup.sh --install${NC}"

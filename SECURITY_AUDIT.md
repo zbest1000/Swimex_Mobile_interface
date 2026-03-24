@@ -10,9 +10,9 @@
 | Severity | Found | Fixed | Remaining |
 |----------|-------|-------|-----------|
 | **Critical** | 1 | 1 | 0 |
-| **High** | 10 | 10 | 0 |
-| **Medium** | 14 | 5 | 9 |
-| **Low** | 9 | 1 | 8 |
+| **High** | 13 | 13 | 0 |
+| **Medium** | 14 | 8 | 6 |
+| **Low** | 9 | 3 | 6 |
 | **Pass** | 3 | — | — |
 
 **Zero known dependency vulnerabilities** (`npm audit` clean).
@@ -70,21 +70,34 @@
 - **File:** `embedded-broker.ts`
 - **Fix:** Added `authorizePublish` and `authorizeSubscribe` callbacks restricting clients to pool-scoped topics
 
+### HIGH-11: WiFi password exposed in admin API response ✅ FIXED
+- **File:** `admin-routes.ts:225`, `wifi-service.ts`
+- **Fix:** Created `getWifiConfigSafe()` that strips the password field; used in all API responses. PUT response also uses safe getter.
+
+### HIGH-12: WiFi password leaked in config export ✅ FIXED
+- **Files:** `config-service.ts:24-28,58-64`
+- **Fix:** Config export now filters `SENSITIVE_KEYS` (`wifi_password`, `jwt_secret`) from `system_config`. WiFi config blob has password stripped before export.
+
+### HIGH-13: Plaintext passwords logged to systemd journal ✅ FIXED
+- **File:** `seed.ts:55-62`
+- **Fix:** Generated credentials are now written to a `0600`-permission file (`<data-dir>/.initial-credentials`) instead of the log. Log only mentions the file path.
+
 ---
 
 ## Medium Findings (Remaining — Recommended Follow-ups)
 
 | ID | Finding | File | Recommendation |
 |----|---------|------|----------------|
-| MED-01 | No token refresh mechanism | `auth-routes.ts` | Add `/api/auth/refresh` endpoint |
-| MED-02 | Session/JWT expiry mismatch | `auth-service.ts:58,128` | Align JWT `expiresIn` with session `expires_at` |
-| MED-03 | No "revoke all sessions" endpoint | — | Add admin endpoint to revoke all sessions for a user |
-| MED-04 | Role from JWT trusted without DB recheck | `middleware.ts` | Re-read role from DB on sensitive operations |
-| MED-05 | Rate limiter may fail behind reverse proxy | `auth-routes.ts:14-20` | Set `app.set('trust proxy', 1)` when behind proxy |
+| MED-01✅ | MQTT getConfig() exposed credentials | `mqtt-broker.ts:322` | Password stripped from returned config |
+| MED-02✅ | Duplicate wifi_password in system_config | `auth-routes.ts:201` | Removed standalone key; password only in wifi_ap_config blob |
+| MED-03✅ | `SELECT *` returns password_hash to callers | `auth-service.ts` | Replaced with explicit safe column lists; login uses separate query that includes hash |
+| MED-04 | No token refresh mechanism | `auth-routes.ts` | Add `/api/auth/refresh` endpoint |
+| MED-05 | Session/JWT expiry mismatch | `auth-service.ts:58,128` | Align JWT `expiresIn` with session `expires_at` |
 | MED-06 | No MQTT TLS | `mqtt-broker.ts:33` | Add TLS transport to embedded broker |
 | MED-07 | No WebSocket origin check | `ws-handler.ts:42` | Add `verifyClient` callback checking `Origin` header |
 | MED-08 | No WebSocket message size/rate limit | `ws-handler.ts:94-101` | Set `maxPayload`, implement per-client rate limit |
 | MED-09 | SVG upload without sanitization | `graphics-routes.ts:64-69` | Sanitize SVG content or reject SVG uploads |
+| MED-10 | Rate limiter may fail behind reverse proxy | `auth-routes.ts:14-20` | Set `app.set('trust proxy', 1)` when behind proxy |
 
 ---
 

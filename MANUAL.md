@@ -310,9 +310,11 @@ On first run, the server creates two accounts automatically:
 | Administrator | `admin` (or `ADMIN_USER`) | Set via `ADMIN_PASS` env var, or generated and printed in server log |
 
 **How to find your generated credentials:**
-- **Foreground mode:** Printed in the terminal during startup
-- **systemd service:** `sudo journalctl -u swimex-edge | grep password`
-- **Docker:** `docker logs swimex-edge | grep password`
+- **Credentials file:** `cat <data-dir>/.initial-credentials` (default: `data/.initial-credentials`)
+- **systemd service:** `sudo cat /var/lib/swimex-edge/.initial-credentials`
+- **Docker:** `docker exec swimex-edge cat /data/.initial-credentials`
+
+> **Delete the credentials file after saving the passwords:** `rm <data-dir>/.initial-credentials`
 
 ### Important: Change Your Passwords
 
@@ -856,7 +858,7 @@ Every push and pull request to `main` runs the CI workflow which:
 
 - Double-check your username and password (they're case-sensitive)
 - Ask an Administrator to check if your account is disabled
-- Check the server log for generated credentials: `journalctl -u swimex-edge | grep password`
+- Check the credentials file: `cat data/.initial-credentials` (or `/var/lib/swimex-edge/.initial-credentials` for service installs)
 
 ### "View only — cannot control pool"
 

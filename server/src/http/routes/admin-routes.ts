@@ -222,7 +222,7 @@ router.get('/wifi', authenticate, requireAdmin, (_req: Request, res: Response) =
   res.json({
     success: true,
     data: {
-      config: wifiService.getWifiConfig(),
+      config: wifiService.getWifiConfigSafe(),
       status: wifiService.getWifiStatus(),
     },
   });
@@ -230,8 +230,8 @@ router.get('/wifi', authenticate, requireAdmin, (_req: Request, res: Response) =
 
 router.put('/wifi', authenticate, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   try {
-    const cfg = wifiService.updateWifiConfig(req.body, req.user!.userId);
-    res.json({ success: true, data: cfg });
+    wifiService.updateWifiConfig(req.body, req.user!.userId);
+    res.json({ success: true, data: wifiService.getWifiConfigSafe() });
   } catch (err) { next(err); }
 });
 

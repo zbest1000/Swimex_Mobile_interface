@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { getDb } from './connection';
 import { createLogger } from '../utils/logger';
 import * as authService from '../auth/auth-service';
@@ -53,12 +55,19 @@ export async function seedDefaults(): Promise<void> {
   }
 
   if (!process.env.ADMIN_PASS || !process.env.SUPERADMIN_PASS) {
-    log.info('========================================');
-    log.info(' Generated first-run credentials:');
-    if (!process.env.SUPERADMIN_PASS) log.info(`   superadmin password: ${superAdminPass}`);
-    if (!process.env.ADMIN_PASS) log.info(`   ${adminUser} password: ${adminPass}`);
-    log.info(' SAVE THESE and change them after login.');
-    log.info('========================================');
+    const credentialsFile = path.join(process.env.DATA_DIR || path.resolve(__dirname, '../../data'), '.initial-credentials');
+    const lines: string[] = ['# SwimEx EDGE — Initial Credentials (generated on first run)', '# DELETE THIS FILE after saving these credentials securely.', ''];
+    if (!process.env.SUPERADMIN_PASS) lines.push(`superadmin_password=${superAdminPass}`);
+    if (!process.env.ADMIN_PASS) lines.push(`${adminUser}_password=${adminPass}`);
+    try {
+      fs.writeFileSync(credentialsFile, lines.join('\n') + '\n', { mode: 0o600 });
+      log.info(`Generated credentials written to ${credentialsFile} (mode 0600)`);
+      log.info('IMPORTANT: Read credentials from that file, then delete it.');
+    } catch {
+      log.warn('Could not write credentials file — printing to log as fallback:');
+      if (!process.env.SUPERADMIN_PASS) log.warn(`  superadmin password: ${superAdminPass}`);
+      if (!process.env.ADMIN_PASS) log.warn(`  ${adminUser} password: ${adminPass}`);
+    }
   }
 
   log.info('Default accounts created. Change passwords via the commissioning wizard.');

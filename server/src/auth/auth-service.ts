@@ -10,6 +10,8 @@ import { auditLog } from './audit';
 
 const log = createLogger('auth');
 
+const USER_SAFE_COLUMNS = 'id, username, display_name, email, role, is_active, created_at, last_login_at';
+
 export interface TokenPayload {
   userId: string;
   username: string;
@@ -100,13 +102,13 @@ export async function createUser(
   auditLog('USER_CREATED', createdBy ?? null, 'user', id, { username, role });
   log.info(`User created: ${username} (${role})`);
 
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Record<string, unknown>;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(id) as Record<string, unknown>;
   return toUserDTO(row);
 }
 
 export async function login(username: string, password: string, sourceIp?: string): Promise<{ user: UserDTO; token: string }> {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username) as Record<string, unknown> | undefined;
+  const row = db.prepare('SELECT id, username, display_name, email, role, is_active, created_at, last_login_at, password_hash FROM users WHERE username = ? AND is_active = 1').get(username) as Record<string, unknown> | undefined;
 
   if (!row) {
     auditLog('LOGIN_FAILED', null, 'auth', null, { username, reason: 'user not found', sourceIp });
@@ -136,7 +138,7 @@ export async function login(username: string, password: string, sourceIp?: strin
 
 export function getUserById(id: string): UserDTO | null {
   const db = getDb();
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
   return row ? toUserDTO(row) : null;
 }
 
@@ -144,9 +146,9 @@ export function listUsers(role?: UserRole): UserDTO[] {
   const db = getDb();
   let rows: Record<string, unknown>[];
   if (role) {
-    rows = db.prepare('SELECT * FROM users WHERE role = ? ORDER BY created_at DESC').all(role) as Record<string, unknown>[];
+    rows = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE role = ? ORDER BY created_at DESC`).all(role) as Record<string, unknown>[];
   } else {
-    rows = db.prepare('SELECT * FROM users WHERE role != ? ORDER BY created_at DESC').all(UserRole.SUPER_ADMINISTRATOR) as Record<string, unknown>[];
+    rows = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE role != ? ORDER BY created_at DESC`).all(UserRole.SUPER_ADMINISTRATOR) as Record<string, unknown>[];
   }
   return rows.map(toUserDTO);
 }
@@ -163,7 +165,7 @@ export async function updateUserRole(userId: string, newRole: UserRole, actorId:
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(newRole, userId);
   auditLog('ROLE_CHANGED', actorId, 'user', userId, { newRole });
 
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as Record<string, unknown>;
+  const row = db.prepare(`SELECT ${USER_SAFE_COLUMNS} FROM users WHERE id = ?`).get(userId) as Record<string, unknown>;
   return toUserDTO(row);
 }
 

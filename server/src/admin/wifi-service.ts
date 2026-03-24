@@ -21,7 +21,7 @@ export interface WifiApConfig {
 
 const DEFAULT_WIFI_CONFIG: WifiApConfig = {
   ssid: 'PoolCtrl',
-  password: 'swimex2024',
+  password: '',
   channel: 6,
   band: '2.4GHz',
   hidden: false,
@@ -52,6 +52,12 @@ function getHostapdConfPath(): string {
 
 function getDnsmasqConfPath(): string {
   return path.join(config.configDir, 'dnsmasq.conf');
+}
+
+export function getWifiConfigSafe(): Omit<WifiApConfig, 'password'> & { hasPassword: boolean } {
+  const cfg = getWifiConfig();
+  const { password: _pw, ...safe } = cfg;
+  return { ...safe, hasPassword: cfg.password.length > 0 };
 }
 
 export function getWifiConfig(): WifiApConfig {

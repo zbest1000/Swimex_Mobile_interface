@@ -198,7 +198,6 @@ router.post('/commission/step3-network', authenticate, requireSuperAdmin, (req: 
 
     // Save network config (legacy system_config keys)
     setSystemConfig('wifi_ssid', wifiSsid || 'PoolCtrl');
-    setSystemConfig('wifi_password', wifiPassword || '');
     setSystemConfig('wifi_channel', String(wifiChannel || 6));
     setSystemConfig('server_ip', serverIp || '');
     setSystemConfig('subnet_mask', subnetMask || '255.255.255.0');

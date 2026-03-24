@@ -318,8 +318,9 @@ export class MqttService extends EventEmitter {
     return this.mqttConfig.topicPrefix;
   }
 
-  getConfig(): MqttBrokerConfig {
-    return { ...this.mqttConfig };
+  getConfig(): Omit<MqttBrokerConfig, 'password'> {
+    const { password: _pw, ...safe } = this.mqttConfig;
+    return safe;
   }
 
   async stop(): Promise<void> {

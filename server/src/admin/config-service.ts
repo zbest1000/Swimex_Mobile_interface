@@ -21,9 +21,11 @@ export interface ServerConfigExport {
 export function exportConfig(): ServerConfigExport {
   const db = getDb();
 
+  const SENSITIVE_KEYS = new Set(['wifi_password', 'jwt_secret']);
   const system: Record<string, string> = {};
   const sysRows = db.prepare('SELECT key, value FROM system_config').all() as { key: string; value: string }[];
   for (const row of sysRows) {
+    if (SENSITIVE_KEYS.has(row.key)) continue;
     system[row.key] = row.value;
   }
 
@@ -59,7 +61,9 @@ export function exportConfig(): ServerConfigExport {
   try {
     const wifiRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
     if (wifiRow) {
-      wifiConfig = JSON.parse(wifiRow.value);
+      const parsed = JSON.parse(wifiRow.value);
+      delete parsed.password;
+      wifiConfig = parsed;
     }
   } catch { /* no wifi config yet */ }
 
