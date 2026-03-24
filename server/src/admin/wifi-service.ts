@@ -21,7 +21,7 @@ export interface WifiApConfig {
 
 const DEFAULT_WIFI_CONFIG: WifiApConfig = {
   ssid: 'PoolCtrl',
-  password: '',
+  password: 'Swimex2026!',
   channel: 6,
   band: '2.4GHz',
   hidden: false,
