@@ -1,4 +1,4 @@
-import { execSync, exec } from 'child_process';
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../utils/config';
@@ -30,6 +30,21 @@ const DEFAULT_WIFI_CONFIG: WifiApConfig = {
 };
 
 const VALID_CHANNELS_2_4GHZ = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const VALID_INTERFACE_RE = /^[a-zA-Z0-9_-]{1,15}$/;
+
+function assertSafeInterface(iface: string): string {
+  if (!VALID_INTERFACE_RE.test(iface)) {
+    throw new ValidationError(`Unsafe interface name rejected: "${iface}"`);
+  }
+  return iface;
+}
+
+function assertSafeHostapdValue(value: string, fieldName: string): string {
+  if (/[\n\r]/.test(value)) {
+    throw new ValidationError(`${fieldName} must not contain newline characters`);
+  }
+  return value;
+}
 
 function getHostapdConfPath(): string {
   return path.join(config.configDir, 'hostapd.conf');
@@ -76,6 +91,11 @@ export function updateWifiConfig(
       throw new ValidationError('Max clients must be between 1 and 50');
     }
   }
+  if (updates.interface !== undefined) {
+    if (!VALID_INTERFACE_RE.test(updates.interface)) {
+      throw new ValidationError('Interface name must be alphanumeric (max 15 chars, e.g. wlan0)');
+    }
+  }
 
   const current = getWifiConfig();
   const updated: WifiApConfig = { ...current, ...updates, band: '2.4GHz' };
@@ -111,7 +131,8 @@ export function getWifiStatus(): {
 
   if (isRunning) {
     try {
-      const stations = execSync(`iw dev ${cfg.interface} station dump 2>/dev/null | grep -c 'Station'`, { timeout: 5000 }).toString().trim();
+      const iface = assertSafeInterface(cfg.interface);
+      const stations = execSync(`iw dev ${iface} station dump 2>/dev/null | grep -c 'Station'`, { timeout: 5000 }).toString().trim();
       connectedClients = parseInt(stations, 10) || 0;
     } catch {
       connectedClients = 0;
@@ -128,10 +149,14 @@ export function getWifiStatus(): {
 }
 
 function generateHostapdConf(cfg: WifiApConfig): string {
+  const iface = assertSafeInterface(cfg.interface);
+  const ssid = assertSafeHostapdValue(cfg.ssid, 'SSID');
+  const pass = assertSafeHostapdValue(cfg.password, 'Password');
+
   return `# SwimEx EDGE WiFi AP Configuration (auto-generated)
-interface=${cfg.interface}
+interface=${iface}
 driver=nl80211
-ssid=${cfg.ssid}
+ssid=${ssid}
 hw_mode=g
 channel=${cfg.channel}
 wmm_enabled=0
@@ -139,7 +164,7 @@ macaddr_acl=0
 auth_algs=1
 ignore_broadcast_ssid=${cfg.hidden ? 1 : 0}
 wpa=2
-wpa_passphrase=${cfg.password}
+wpa_passphrase=${pass}
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
@@ -148,8 +173,9 @@ max_num_sta=${cfg.maxClients}
 }
 
 function generateDnsmasqConf(cfg: WifiApConfig): string {
+  const iface = assertSafeInterface(cfg.interface);
   return `# SwimEx EDGE DHCP Configuration (auto-generated)
-interface=${cfg.interface}
+interface=${iface}
 dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
 domain=local
 address=/edge.local/192.168.4.1
@@ -167,8 +193,9 @@ export function applyWifiConfig(actorId: string): { success: boolean; message: s
     log.info('WiFi configuration files written');
 
     try {
-      execSync(`ip addr add 192.168.4.1/24 dev ${cfg.interface} 2>/dev/null || true`, { timeout: 5000 });
-      execSync(`ip link set ${cfg.interface} up`, { timeout: 5000 });
+      const iface = assertSafeInterface(cfg.interface);
+      execSync(`ip addr add 192.168.4.1/24 dev ${iface} 2>/dev/null || true`, { timeout: 5000 });
+      execSync(`ip link set ${iface} up`, { timeout: 5000 });
     } catch (err: any) {
       log.warn(`Network interface setup: ${err.message}`);
     }
