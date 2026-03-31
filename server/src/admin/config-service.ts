@@ -236,16 +236,42 @@ export function importConfig(
 
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
-        const wifiData = { ...data.wifiConfig };
+        const wifiData = { ...data.wifiConfig } as Record<string, unknown>;
+        const currentWifiRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
+        let currentPassword: string | null = null;
+        if (currentWifiRow) {
+          try {
+            const parsedCurrent = JSON.parse(currentWifiRow.value) as Record<string, unknown>;
+            if (typeof parsedCurrent.password === 'string' && parsedCurrent.password.length > 0) {
+              currentPassword = parsedCurrent.password;
+            }
+          } catch {
+            // Keep null if existing wifi config is malformed.
+          }
+        }
+
         if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
+          const decrypted = decrypt(String(wifiData.password_encrypted));
           if (decrypted) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            skipped.push('wifiConfig');
+            return;
           }
           delete wifiData.password_encrypted;
         }
+
+        if (typeof wifiData.password !== 'string' || wifiData.password.length === 0) {
+          if (currentPassword) {
+            wifiData.password = currentPassword;
+          } else {
+            errors.push('wifiConfig: missing WiFi password in import payload and no existing password to preserve');
+            skipped.push('wifiConfig');
+            return;
+          }
+        }
+
         db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
         imported.push('wifiConfig');
       } catch (err: any) {
