@@ -237,17 +237,43 @@ export function importConfig(
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
         const wifiData = { ...data.wifiConfig };
+        let decryptFailed = false;
         if (wifiData.password_encrypted && !wifiData.password) {
           const decrypted = decrypt(wifiData.password_encrypted as string);
           if (decrypted) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            decryptFailed = true;
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+
+        if (decryptFailed) {
+          skipped.push('wifiConfig');
+        } else {
+          if (!wifiData.password) {
+            const existingRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
+            if (existingRow) {
+              try {
+                const existingParsed = JSON.parse(existingRow.value) as Record<string, unknown>;
+                if (typeof existingParsed.password === 'string' && existingParsed.password.length > 0) {
+                  wifiData.password = existingParsed.password;
+                }
+              } catch {
+                // Fall through to validation error below.
+              }
+            }
+          }
+
+          if (!wifiData.password) {
+            errors.push('wifiConfig: missing WiFi password in import payload');
+            skipped.push('wifiConfig');
+          } else {
+            db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+            imported.push('wifiConfig');
+          }
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
