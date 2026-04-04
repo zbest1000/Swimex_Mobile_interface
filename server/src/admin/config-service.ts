@@ -243,8 +243,17 @@ export function importConfig(
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            skipped.push('wifiConfig');
+            return;
           }
-          delete wifiData.password_encrypted;
+        }
+        delete wifiData.password_encrypted;
+        // Never persist WiFi config without a password; otherwise runtime defaults
+        // can silently re-enable a known default credential.
+        if (!wifiData.password || typeof wifiData.password !== 'string') {
+          errors.push('wifiConfig: missing WiFi password in import payload');
+          skipped.push('wifiConfig');
+          return;
         }
         db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
         imported.push('wifiConfig');
