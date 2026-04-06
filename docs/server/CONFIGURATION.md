@@ -1,200 +1,106 @@
 # SwimEx EDGE Server Configuration Reference
 
-This document describes the configuration file format, environment variables, network interfaces, ports, TLS, database, logging, and feature flags for the EDGE Server.
+This document reflects the current server runtime behavior in `server/src/utils/config.ts`, `server/src/utils/logger.ts`, and admin services.
 
-## Config File Format
+## Configuration Model
 
-The primary configuration file is `edge.conf` (or `edge.yaml`). Location varies by platform:
-
-| Platform | Default Path |
-|----------|--------------|
-| Linux | `/etc/swimex-edge/edge.conf` |
-| Windows | `C:\ProgramData\SwimEx\EDGE\edge.conf` |
-| Docker | `/app/config/edge.conf` or via volume mount |
-
-Format: INI-style or YAML. Example INI:
-
-```ini
-[server]
-host = 0.0.0.0
-http_port = 80
-https_port = 443
-
-[mqtt]
-enabled = true
-port = 1883
-tls_port = 8883
-
-[modbus]
-server_enabled = true
-server_port = 502
-client_enabled = true
-
-[database]
-path = /var/lib/swimex-edge/data/edge.db
-
-[logging]
-level = info
-file = /var/log/swimex-edge/edge.log
-```
-
-Example YAML:
-
-```yaml
-server:
-  host: 0.0.0.0
-  http_port: 80
-  https_port: 443
-
-mqtt:
-  enabled: true
-  port: 1883
-  tls_port: 8883
-
-modbus:
-  server_enabled: true
-  server_port: 502
-  client_enabled: true
-
-database:
-  path: /var/lib/swimex-edge/data/edge.db
-
-logging:
-  level: info
-  file: /var/log/swimex-edge/edge.log
-```
-
-## Environment Variables
-
-Environment variables override config file values. Prefix: `EDGE_`.
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `EDGE_CONFIG_PATH` | Path to config file | `/etc/swimex-edge/edge.conf` |
-| `EDGE_DB_PATH` | Database file or directory | `/data/db` |
-| `EDGE_HTTP_PORT` | HTTP listen port | `80` |
-| `EDGE_HTTPS_PORT` | HTTPS listen port | `443` |
-| `EDGE_MQTT_PORT` | MQTT plaintext port | `1883` |
-| `EDGE_MQTT_TLS_PORT` | MQTT TLS port | `8883` |
-| `EDGE_MODBUS_PORT` | Modbus TCP server port | `502` |
-| `EDGE_LOG_LEVEL` | Logging level | `debug`, `info`, `warn`, `error` |
-| `EDGE_TLS_CERT` | Path to TLS certificate | `/etc/ssl/certs/edge.pem` |
-| `EDGE_TLS_KEY` | Path to TLS private key | `/etc/ssl/private/edge.key` |
-
-## Network Interfaces
-
-| Interface | Purpose | Typical Config |
-|-----------|---------|----------------|
-| **Ethernet** | PLC communication, Modbus TCP, MQTT from controllers | Static IP on industrial subnet |
-| **Wi-Fi** | Client access, web app, Wi-Fi AP | DHCP or static; AP mode for tablets |
-
-Configure via Admin UI or config file:
-
-```ini
-[network.ethernet]
-interface = eth0
-mode = static
-address = 192.168.10.10
-netmask = 255.255.255.0
-gateway = 192.168.10.1
-
-[network.wifi]
-interface = wlan0
-mode = ap
-ssid = PoolCtrl
-password = <encrypted>
-channel = 6
-dhcp_range = 192.168.20.100,192.168.20.200
-```
-
-## Ports Reference
-
-| Port | Protocol | Default | Description |
-|------|----------|---------|-------------|
-| 80 | HTTP | Yes | Web application, REST API |
-| 443 | HTTPS | Yes | TLS-secured web and API |
-| 1883 | MQTT | Yes | MQTT plaintext |
-| 8883 | MQTTS | Yes | MQTT over TLS |
-| 502 | Modbus TCP | Yes | Modbus TCP server |
-
-All ports are configurable. Ensure firewall rules allow required traffic.
-
-## TLS Settings
-
-| Setting | Description |
-|---------|-------------|
-| `tls.enabled` | Enable TLS for HTTPS and MQTTS |
-| `tls.cert_file` | Path to certificate (PEM) |
-| `tls.key_file` | Path to private key (PEM) |
-| `tls.ca_file` | Optional CA bundle for client cert verification |
-| `tls.min_version` | Minimum TLS version (e.g., 1.2) |
-
-```ini
-[tls]
-enabled = true
-cert_file = /etc/ssl/certs/edge.pem
-key_file = /etc/ssl/private/edge.key
-min_version = 1.2
-```
-
-## Database Location
-
-| Platform | Default Path |
-|----------|--------------|
-| Linux | `/var/lib/swimex-edge/data/` |
-| Windows | `C:\ProgramData\SwimEx\EDGE\data\` |
-| Docker | `/data` (volume mount) |
-
-The database stores:
-
-- Configuration
-- User accounts and permissions
-- Tag definitions
-- Audit logs
-- Session data
-
-For Docker, mount a persistent volume to `/data` to preserve data across restarts.
-
-## Logging Levels
-
-| Level | Description |
-|-------|-------------|
-| `debug` | Verbose; includes protocol traces |
-| `info` | Normal operation; startup, connections, errors |
-| `warn` | Warnings and recoverable issues |
-| `error` | Errors only |
-
-```ini
-[logging]
-level = info
-file = /var/log/swimex-edge/edge.log
-max_size_bytes = 10485760
-max_files = 5
-```
-
-## Feature Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `features.mqtt_broker` | Enable built-in MQTT broker | `true` |
-| `features.modbus_server` | Enable Modbus TCP server | `true` |
-| `features.modbus_client` | Enable Modbus TCP client | `true` |
-| `features.bluetooth` | Enable Bluetooth (Super Admin only) | `false` |
-| `features.wifi_ap` | Enable Wi-Fi access point | `true` |
-| `features.graphics_editor` | Enable built-in graphics editor | `true` |
-
-```ini
-[features]
-mqtt_broker = true
-modbus_server = true
-modbus_client = true
-bluetooth = false
-wifi_ap = true
-graphics_editor = true
-```
+The server currently reads runtime configuration from environment variables plus built-in defaults.
 
 ## Config Precedence
 
 1. Environment variables (highest)
-2. Config file
-3. Built-in defaults (lowest)
+2. Built-in defaults in code (lowest)
+
+There is no generic `edge.conf`/`edge.yaml` parser in the current server runtime.
+
+## Core Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTP_PORT` | `80` | HTTP listen port |
+| `HTTPS_PORT` | `443` | Reserved HTTPS port setting |
+| `MQTT_PORT` | `1883` | MQTT plaintext port |
+| `MQTT_TLS_PORT` | `8883` | MQTT TLS port |
+| `MODBUS_PORT` | `502` | Modbus TCP server port |
+| `DATA_DIR` | `./data` | Data directory (SQLite DB at `<DATA_DIR>/edge.db`) |
+| `CONFIG_DIR` | `./config` | Config directory for generated files (for example `hostapd.conf`) |
+| `POOL_ID` | `default` | Pool identifier used in core tag addresses |
+| `JWT_SECRET` | random per process | JWT signing secret (set explicitly for persistent sessions) |
+| `JWT_EXPIRES_IN` | `24h` | JWT access token expiry |
+| `ADMIN_USER` | `admin` | Seeded admin username |
+| `ADMIN_PASS` | empty | Optional seeded admin password |
+| `SUPERADMIN_PASS` | empty | Optional seeded super-admin password |
+| `HEARTBEAT_INTERVAL_MS` | `2000` | PLC heartbeat interval |
+| `HEARTBEAT_MISSED_THRESHOLD` | `3` | Missed heartbeats before timeout handling |
+| `LOG_LEVEL` | `info` | Console/file minimum log level |
+| `LOG_FILE` | empty | File path to enable file logging |
+| `LOG_FORMAT` | `text` | File log format: `text` or `json` |
+| `LOG_MAX_SIZE_MB` | `10` | Per-file rotation size limit |
+| `LOG_MAX_FILES` | `5` | Number of rotated files to keep |
+| `SIMULATOR_MODE` | `false` | Start PLC simulator when `true` or `1` |
+| `MQTT_EXTERNAL` | `false` | Set `true` to use an external MQTT broker instead of embedded broker |
+| `DISABLE_PLC_CHECKS` | `false` | Disable PLC keepalive safety checks (dev/demo only) |
+| `CORS_ORIGIN` | unset | Comma-separated allowlist for CORS origins |
+| `ENABLE_HSTS` | `false` | Set HSTS header when `true` |
+
+## Recommended Dev Startup
+
+Use non-privileged ports and keep PLC checks disabled when no PLC is attached:
+
+```bash
+HTTP_PORT=8080 MODBUS_PORT=5020 DISABLE_PLC_CHECKS=true npm run dev
+```
+
+## Ports Reference
+
+| Port | Protocol | Default | Notes |
+|------|----------|---------|-------|
+| `HTTP_PORT` | HTTP | `80` | Use non-root port (for example `8080`) in local dev |
+| `MQTT_PORT` | MQTT | `1883` | Used by embedded broker unless `MQTT_EXTERNAL=true` |
+| `MQTT_TLS_PORT` | MQTTS | `8883` | TLS port setting |
+| `MODBUS_PORT` | Modbus TCP | `502` | Use non-root port (for example `5020`) in local dev |
+
+## Wi-Fi AP Constraints (Admin)
+
+These constraints come from `server/src/admin/wifi-service.ts`.
+
+| Field | Constraint |
+|-------|------------|
+| `ssid` | 1-32 characters |
+| `password` | 8-63 characters |
+| `channel` | 2.4 GHz channels `1-11` |
+| `maxClients` | integer `1-50` |
+| `interface` | alphanumeric/underscore/hyphen, max 15 chars |
+| `band` | fixed to `2.4GHz` |
+
+Operational details:
+
+- AP network gateway is `192.168.4.1`.
+- DHCP pool is currently fixed to `192.168.4.2-192.168.4.20` (24h lease).
+- Wi-Fi config is stored in `system_config.wifi_ap_config`.
+
+## Logging
+
+Supported log levels:
+
+`debug`, `info`, `security`, `warn`, `error`, `fatal`
+
+File logging behavior:
+
+- Enabled only when `LOG_FILE` is set.
+- `LOG_FORMAT=json` writes structured JSON lines.
+- Rotates at `LOG_MAX_SIZE_MB` and keeps `LOG_MAX_FILES` archives.
+
+Example:
+
+```bash
+LOG_LEVEL=debug LOG_FILE=/var/log/swimex-edge/edge.log LOG_FORMAT=json LOG_MAX_SIZE_MB=20 LOG_MAX_FILES=10 npm start
+```
+
+## Security-Sensitive Configuration Behavior
+
+- If `JWT_SECRET` is unset, the server generates an ephemeral random secret at startup. Existing sessions become invalid after restart.
+- `JWT_SECRET` should be at least 32 characters in production.
+- Config export (`/api/admin/config/export`) excludes sensitive system keys such as `jwt_secret` and `wifi_password`.
+- Exported Wi-Fi password is emitted as `password_encrypted` (AES-256-GCM, key derived from `JWT_SECRET`).
+- Config import decrypts `password_encrypted`; import fails for Wi-Fi password if the target server uses a different JWT secret.
