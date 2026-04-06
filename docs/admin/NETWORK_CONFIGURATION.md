@@ -1,140 +1,80 @@
 # SwimEx EDGE — Network Configuration
 
-Network Configuration covers Wi-Fi Access Point settings and Bluetooth configuration. Wi-Fi settings are available to Admin users; Bluetooth configuration is Super Admin only.
+This page documents the network controls currently implemented in the server admin API.
 
----
+## Current Scope
 
-## Overview
+Implemented admin network operations are Wi-Fi Access Point management endpoints:
 
-| Section | Access | Description |
-|---------|--------|-------------|
-| Wi-Fi AP | Admin | SSID, password, channel, DHCP range, diagnostics |
-| Bluetooth | Super Admin only | Enable/disable, pair, preferred connection, link quality |
+- `GET /api/admin/wifi`
+- `PUT /api/admin/wifi`
+- `POST /api/admin/wifi/start`
+- `POST /api/admin/wifi/stop`
 
----
+All require authenticated Admin access.
 
-## Wi-Fi Access Point Configuration
+## Wi-Fi AP Data Model and Constraints
 
-### Basic Settings
+Source: `server/src/admin/wifi-service.ts`.
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| SSID | Network name | SwimEx-Pool-01 |
-| Password | WPA2 passphrase | ******** |
-| Channel | WiFi channel (1–11 for 2.4 GHz) | 6 |
-| Security | WPA2-PSK recommended | WPA2 |
+| Field | Type | Constraints |
+|-------|------|-------------|
+| `ssid` | string | 1-32 characters |
+| `password` | string | 8-63 characters |
+| `channel` | number | 2.4 GHz channels `1-11` |
+| `band` | string | fixed to `2.4GHz` |
+| `hidden` | boolean | controls broadcast suppression |
+| `maxClients` | number | 1-50 |
+| `interface` | string | alphanumeric/underscore/hyphen, max 15 chars |
 
----
+Default config:
 
-### DHCP Range
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| Start IP | First address in pool | 192.168.4.100 |
-| End IP | Last address in pool | 192.168.4.200 |
-| Lease time | Duration of DHCP lease | 86400 (24 hours) |
-
----
-
-### Diagnostics
-
-| Diagnostic | Description |
-|------------|-------------|
-| Connected clients | List of devices with IP, MAC, hostname |
-| Signal strength | RSSI per client (if available) |
-| DHCP leases | Active lease table |
-| AP status | Up/down, channel utilization |
-
----
-
-## Wi-Fi Configuration Flow
-
-```
-Wi-Fi AP Config
-===============
-
-Admin opens Network Config
-    |
-    v
-Edit SSID, password, channel
-    |
-    v
-Edit DHCP range (optional)
-    |
-    v
-Save
-    |
-    v
-AP restarts with new settings
-    |
-    v
-Clients may need to reconnect
+```json
+{
+  "ssid": "PoolCtrl",
+  "password": "Swimex2026!",
+  "channel": 6,
+  "band": "2.4GHz",
+  "hidden": false,
+  "maxClients": 10,
+  "interface": "wlan0"
+}
 ```
 
----
+## Runtime Behavior
 
-## Bluetooth Configuration (Super Admin Only)
+- Wi-Fi config is stored in `system_config` under `wifi_ap_config`.
+- `GET /api/admin/wifi` returns a safe config view (`passwordMasked`, `hasPassword`) plus AP status.
+- AP status checks `hostapd` service state and counts associated stations from `iw`.
+- `POST /api/admin/wifi/start` writes:
+  - `hostapd.conf` to `<CONFIG_DIR>/hostapd.conf`
+  - `dnsmasq.conf` to `<CONFIG_DIR>/dnsmasq.conf`
+- Start flow configures interface IP `192.168.4.1/24`, starts `hostapd`, then starts `dnsmasq`.
+- DHCP pool is currently fixed to `192.168.4.2-192.168.4.20` with 24h lease.
 
-| Parameter | Description | Access |
-|-----------|-------------|--------|
-| Enable/Disable | Turn Bluetooth on or off | Super Admin |
-| Pair | Pair with client device | Super Admin |
-| Preferred connection | Wi-Fi vs Bluetooth priority | Super Admin |
-| Link quality | Signal strength, connection status | Super Admin |
+## Operational Runbook
 
----
+1. `GET /api/admin/wifi` and verify current config/status.
+2. `PUT /api/admin/wifi` with validated changes.
+3. `POST /api/admin/wifi/start` to apply files and start AP services.
+4. Re-check `GET /api/admin/wifi` for `isRunning=true` and expected channel/interface.
+5. If rollback is needed, restore config via `PUT` and call `/wifi/start` again, or stop AP with `/wifi/stop`.
 
-## Bluetooth Flow
+## Troubleshooting
 
-```
-Bluetooth Config (Super Admin)
-==============================
+| Symptom | Likely Cause | Action |
+|---------|--------------|--------|
+| `success=false` from `/wifi/start` with hostapd error | Invalid interface/channel or hostapd failure | Validate interface exists and channel is 1-11; inspect hostapd output on host |
+| `connectedClients` always `0` | AP not running or `iw` unavailable | Confirm `status.isRunning`; verify wireless tooling on target OS |
+| Clients cannot get IP | dnsmasq failed to start | Check dnsmasq process and generated `<CONFIG_DIR>/dnsmasq.conf` |
+| Password rejected on update | Fails 8-63 char validation | Submit WPA2 passphrase in allowed length |
 
-Super Admin opens hidden Bluetooth section
-    |
-    v
-Enable or disable Bluetooth
-    |
-    v
-Pair: Initiate pairing with client
-    |
-    v
-Set preferred connection (Wi-Fi / Bluetooth)
-    |
-    v
-View link quality (RSSI, latency)
-```
+## Notes on Bluetooth
 
----
-
-## Permission Matrix
-
-| Feature | Admin | Super Admin |
-|---------|-------|-------------|
-| Wi-Fi SSID | Yes | Yes |
-| Wi-Fi password | Yes | Yes |
-| Wi-Fi channel | Yes | Yes |
-| DHCP range | Yes | Yes |
-| Wi-Fi diagnostics | Yes | Yes |
-| Bluetooth enable/disable | No | Yes |
-| Bluetooth pair | No | Yes |
-| Preferred connection | No | Yes |
-| Link quality | No | Yes |
-
----
-
-## Security Notes
-
-| Setting | Recommendation |
-|---------|----------------|
-| Wi-Fi password | Strong passphrase; change from default |
-| Bluetooth | Disabled by default; enable only when needed |
-| DHCP range | Limit to expected client count |
-
----
+Bluetooth appears as a feature flag in database seed/migrations, but this server runtime does not currently expose Bluetooth admin configuration endpoints in `admin-routes.ts`.
 
 ## Related Documentation
 
-- [Device Registration](DEVICE_REGISTRATION.md) — MAC-based access control
-- [Communication Bluetooth](../communication/BLUETOOTH.md) — Bluetooth protocol
-- [Admin README](README.md) — Admin panel index
+- [Admin README](README.md)
+- [Server Configuration](../server/CONFIGURATION.md)
+- [Communication Bluetooth](../communication/BLUETOOTH.md)

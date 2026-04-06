@@ -328,6 +328,177 @@ Register a new device.
 
 **Errors:** 400 (invalid MAC), 409 (already registered)
 
+### GET /api/admin/wifi
+
+Get Admin Wi-Fi Access Point configuration (password-safe) and runtime status.
+
+**Auth:** Admin or Super Admin
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "config": {
+      "ssid": "PoolCtrl",
+      "channel": 6,
+      "band": "2.4GHz",
+      "hidden": false,
+      "maxClients": 10,
+      "interface": "wlan0",
+      "hasPassword": true,
+      "passwordMasked": "S*********!"
+    },
+    "status": {
+      "isRunning": false,
+      "ssid": null,
+      "channel": null,
+      "connectedClients": 0,
+      "interface": "wlan0"
+    }
+  }
+}
+```
+
+### PUT /api/admin/wifi
+
+Update persisted Wi-Fi AP configuration.
+
+**Auth:** Admin or Super Admin
+
+**Request:**
+
+```json
+{
+  "ssid": "PoolCtrl-DeckA",
+  "password": "StrongPass123!",
+  "channel": 11,
+  "maxClients": 20,
+  "hidden": false,
+  "interface": "wlan0"
+}
+```
+
+**Validation rules:**
+
+- `ssid`: 1-32 chars
+- `password`: 8-63 chars (when provided)
+- `channel`: one of 1-11
+- `maxClients`: 1-50
+- `interface`: `^[a-zA-Z0-9_-]{1,15}$`
+
+**Response (200):** Updated safe Wi-Fi config object (`passwordMasked`, `hasPassword`, no plaintext password)
+
+### POST /api/admin/wifi/start
+
+Apply current Wi-Fi config to host services (`hostapd`, `dnsmasq`) and attempt to start AP mode.
+
+**Auth:** Admin or Super Admin
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "WiFi AP started: SSID=\"PoolCtrl-DeckA\" on channel 11"
+  }
+}
+```
+
+### POST /api/admin/wifi/stop
+
+Stop Wi-Fi AP services.
+
+**Auth:** Admin or Super Admin
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "WiFi AP stopped"
+  }
+}
+```
+
+### GET /api/admin/config/export
+
+Export server configuration snapshot.
+
+**Auth:** Admin or Super Admin
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": "1.0.0",
+    "exportedAt": "2026-04-06T16:00:00.000Z",
+    "system": {},
+    "communicationConfigs": [],
+    "tagMappings": [],
+    "featureFlags": [],
+    "devices": [],
+    "layouts": [],
+    "branding": null,
+    "wifiConfig": null
+  }
+}
+```
+
+Notes:
+
+- Sensitive system keys (for example `jwt_secret`, `wifi_password`) are excluded.
+- If Wi-Fi password exists, export emits `password_encrypted` and omits plaintext.
+
+### POST /api/admin/config/import
+
+Import server configuration snapshot (full or selected sections).
+
+**Auth:** Super Admin only
+
+**Request:**
+
+```json
+{
+  "config": {
+    "version": "1.0.0",
+    "system": {},
+    "communicationConfigs": [],
+    "tagMappings": [],
+    "featureFlags": [],
+    "devices": [],
+    "layouts": [],
+    "branding": null,
+    "wifiConfig": {
+      "ssid": "PoolCtrl",
+      "password_encrypted": "base64blob..."
+    }
+  },
+  "overwrite": true,
+  "sections": ["system", "wifiConfig"]
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "imported": ["system", "wifiConfig"],
+    "skipped": [],
+    "errors": []
+  }
+}
+```
+
+Constraint: encrypted Wi-Fi password import succeeds only when the target server can decrypt with its own key derivation (from `JWT_SECRET`).
+
 ## Tag Endpoints
 
 ### GET /api/tags
