@@ -30,6 +30,16 @@ let maxFileSize = 10 * 1024 * 1024; // 10 MB default
 let maxFiles = 5;
 let currentFileSize = 0;
 
+function disableFileLogging(reason: string, err?: unknown): void {
+  const message = err instanceof Error ? `${reason}: ${err.message}` : reason;
+  console.error(`[LOGGER] File logging disabled - ${message}`);
+  if (logStream) {
+    try { logStream.destroy(); } catch { /* best effort */ }
+  }
+  logStream = null;
+  logFilePath = null;
+}
+
 export function setLogLevel(level: LogLevel | string): void {
   if (level in LEVELS) {
     currentLevel = level as LogLevel;
@@ -52,7 +62,12 @@ export function configureFileLogging(options: {
   maxFiles = options.maxFiles ?? 5;
 
   const dir = path.dirname(logFilePath);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (err) {
+    disableFileLogging(`could not create log directory "${dir}"`, err);
+    return;
+  }
 
   openLogFile();
 }
@@ -65,9 +80,15 @@ function openLogFile(): void {
     } else {
       currentFileSize = 0;
     }
-    logStream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
-  } catch {
-    logStream = null;
+    const stream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
+    stream.on('error', (err) => {
+      if (logStream === stream) {
+        disableFileLogging('stream write failure', err);
+      }
+    });
+    logStream = stream;
+  } catch (err) {
+    disableFileLogging(`could not open log file "${logFilePath}"`, err);
   }
 }
 
