@@ -237,17 +237,31 @@ export function importConfig(
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
         const wifiData = { ...data.wifiConfig };
-        if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
+        const encryptedPassword = typeof wifiData.password_encrypted === 'string'
+          ? wifiData.password_encrypted
+          : null;
+
+        if (encryptedPassword && !wifiData.password) {
+          const decrypted = decrypt(encryptedPassword);
           if (decrypted) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            skipped.push('wifiConfig');
           }
-          delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        delete wifiData.password_encrypted;
+
+        const password = typeof wifiData.password === 'string' ? wifiData.password : '';
+        const hasValidPassword = password.length >= 8 && password.length <= 63;
+
+        if (hasValidPassword) {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        } else if (!skipped.includes('wifiConfig')) {
+          errors.push('wifiConfig: missing or invalid WiFi password in import payload');
+          skipped.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
