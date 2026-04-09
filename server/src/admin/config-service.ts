@@ -246,8 +246,15 @@ export function importConfig(
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        // Never write partial WiFi config without a password, otherwise
+        // getWifiConfig() falls back to DEFAULT_WIFI_CONFIG.password.
+        if (typeof wifiData.password !== 'string' || wifiData.password.length === 0) {
+          errors.push('wifiConfig: missing WiFi password; import skipped to avoid credential reset');
+          skipped.push('wifiConfig');
+        } else {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
