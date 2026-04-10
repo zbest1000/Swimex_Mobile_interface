@@ -236,18 +236,48 @@ export function importConfig(
 
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
-        const wifiData = { ...data.wifiConfig };
-        if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
+        const wifiData = { ...(data.wifiConfig as Record<string, unknown>) };
+        let password =
+          typeof wifiData.password === 'string' && wifiData.password.length > 0
+            ? wifiData.password
+            : null;
+
+        if (!password && typeof wifiData.password_encrypted === 'string') {
+          const decrypted = decrypt(wifiData.password_encrypted);
           if (decrypted) {
-            wifiData.password = decrypted;
+            password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
           }
-          delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        delete wifiData.password_encrypted;
+
+        // Never overwrite WiFi config with a password-less payload. This would
+        // cause callers to fall back to DEFAULT_WIFI_CONFIG.password.
+        if (!password) {
+          const existingWifiRow = db.prepare(
+            "SELECT value FROM system_config WHERE key = 'wifi_ap_config'"
+          ).get() as { value: string } | undefined;
+          if (existingWifiRow) {
+            try {
+              const existingWifi = JSON.parse(existingWifiRow.value) as Record<string, unknown>;
+              if (typeof existingWifi.password === 'string' && existingWifi.password.length > 0) {
+                password = existingWifi.password;
+              }
+            } catch {
+              // Ignore malformed existing config and fail safe below.
+            }
+          }
+        }
+
+        if (!password) {
+          errors.push('wifiConfig: missing WiFi password; skipped to avoid insecure password reset');
+          skipped.push('wifiConfig');
+        } else {
+          wifiData.password = password;
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
