@@ -246,8 +246,13 @@ export function importConfig(
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        const password = typeof wifiData.password === 'string' ? wifiData.password : '';
+        if (password.length < 8 || password.length > 63) {
+          errors.push('wifiConfig: missing or invalid WiFi password; import skipped to avoid insecure default fallback');
+        } else {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
