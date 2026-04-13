@@ -237,17 +237,23 @@ export function importConfig(
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
         const wifiData = { ...data.wifiConfig };
+        let canPersistWifiConfig = true;
         if (wifiData.password_encrypted && !wifiData.password) {
           const decrypted = decrypt(wifiData.password_encrypted as string);
           if (decrypted) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            canPersistWifiConfig = false;
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        if (canPersistWifiConfig) {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        } else {
+          skipped.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
