@@ -10,7 +10,7 @@ This section documents the Admin Panel for the SwimEx EDGE platform. The Admin P
 |----------|-------------|
 | [User Management](USER_MANAGEMENT.md) | View all users, assign roles (User/Maintenance/Admin), disable/enable accounts, delete users, reset password. Super Admin accounts are invisible in this view. |
 | [Device Registration](DEVICE_REGISTRATION.md) | MAC address registry: registered devices have full read/write access; unregistered devices are view-only. Admin actions: view MAC list, register new (manual or from recent devices), revoke, bulk import/export. |
-| [Network Configuration](NETWORK_CONFIGURATION.md) | Wi-Fi AP config (SSID, password, channel, DHCP range, diagnostics), Bluetooth config (Super Admin only: enable/disable, pair, preferred connection, link quality). |
+| [Network Configuration](NETWORK_CONFIGURATION.md) | Wi-Fi AP config and operations (validate/update/start/stop), status checks, and Wi-Fi backup/restore constraints. |
 | [Communication Config](COMMUNICATION_CONFIG.md) | Protocol configuration: MQTT (broker settings, client settings), Modbus TCP (server mode and client mode), HTTP (endpoint, auth, format, polling). Multiple protocols can run simultaneously. |
 
 ---
@@ -19,7 +19,7 @@ This section documents the Admin Panel for the SwimEx EDGE platform. The Admin P
 
 | Role | Admin Panel Access | Notes |
 |------|--------------------|-------|
-| Super Admin | Full + hidden features | Commissioning codes, factory reset, Bluetooth config |
+| Super Admin | Full + hidden features | Commissioning codes, account recovery, config import/export controls |
 | Admin | Full | All admin panel features |
 | Maintenance | Partial | UI builder, diagnostics only |
 | User | None | Admin panel not visible |
@@ -48,7 +48,6 @@ Admin Panel
 |
 +-- Network Configuration
 |   +-- Wi-Fi AP settings
-|   +-- Bluetooth (Super Admin only)
 |
 +-- Communication Config
     +-- MQTT settings
@@ -65,7 +64,6 @@ Admin Panel
 | User Management | Yes | No | No |
 | Device Registration | Yes | No | No |
 | Network Config (Wi-Fi) | Yes | No | No |
-| Network Config (Bluetooth) | No (Super Admin only) | No | No |
 | Communication Config | Yes | No | No |
 
 ---
@@ -84,5 +82,5 @@ Admin Panel
 |----------|------------|
 | [User Management](USER_MANAGEMENT.md) | Roles, disable/enable, delete, reset password, Super Admin invisible |
 | [Device Registration](DEVICE_REGISTRATION.md) | MAC registry, registered vs view-only, bulk import/export |
-| [Network Configuration](NETWORK_CONFIGURATION.md) | Wi-Fi AP, Bluetooth (Super Admin), DHCP, diagnostics |
+| [Network Configuration](NETWORK_CONFIGURATION.md) | Wi-Fi AP API workflow, constraints, and troubleshooting |
 | [Communication Config](COMMUNICATION_CONFIG.md) | MQTT, Modbus TCP, HTTP, multiple protocols |
