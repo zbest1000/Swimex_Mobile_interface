@@ -121,8 +121,8 @@ services:
     volumes:
       - edgedata:/data
     environment:
-      - EDGE_DB_PATH=/data/db
-      - EDGE_LOG_LEVEL=info
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
     restart: unless-stopped
 
 volumes:

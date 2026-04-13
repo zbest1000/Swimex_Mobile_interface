@@ -1,140 +1,127 @@
-# SwimEx EDGE — Network Configuration
+# SwimEx EDGE — Network Configuration (Admin)
 
-Network Configuration covers Wi-Fi Access Point settings and Bluetooth configuration. Wi-Fi settings are available to Admin users; Bluetooth configuration is Super Admin only.
+This document covers the **implemented** network features in the current server:
 
----
+- Wi-Fi AP configuration (`server/src/admin/wifi-service.ts`)
+- Wi-Fi admin endpoints (`server/src/http/routes/admin-routes.ts`)
 
-## Overview
+## Scope and Access
 
-| Section | Access | Description |
-|---------|--------|-------------|
-| Wi-Fi AP | Admin | SSID, password, channel, DHCP range, diagnostics |
-| Bluetooth | Super Admin only | Enable/disable, pair, preferred connection, link quality |
+| Feature | Role required | Notes |
+|---|---|---|
+| View Wi-Fi config/status | Admin+ | `GET /api/admin/wifi` |
+| Update Wi-Fi settings | Admin+ | `PUT /api/admin/wifi` |
+| Start Wi-Fi AP | Admin+ | `POST /api/admin/wifi/start` |
+| Stop Wi-Fi AP | Admin+ | `POST /api/admin/wifi/stop` |
 
----
+## Wi-Fi Data Model
 
-## Wi-Fi Access Point Configuration
+Runtime Wi-Fi settings are stored in `system_config` as `wifi_ap_config` and merged with defaults.
 
-### Basic Settings
+| Field | Type | Default | Constraints |
+|---|---|---|---|
+| `ssid` | string | `PoolCtrl` | 1-32 chars |
+| `password` | string | `Swimex2026!` | 8-63 chars |
+| `channel` | number | `6` | 2.4 GHz channels `1-11` |
+| `band` | string | `2.4GHz` | Fixed to `2.4GHz` |
+| `hidden` | boolean | `false` | SSID broadcast toggle |
+| `maxClients` | number | `10` | Range `1-50` |
+| `interface` | string | `wlan0` | Alphanumeric/`_`/`-`, max 15 chars |
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| SSID | Network name | SwimEx-Pool-01 |
-| Password | WPA2 passphrase | ******** |
-| Channel | WiFi channel (1–11 for 2.4 GHz) | 6 |
-| Security | WPA2-PSK recommended | WPA2 |
+## API Workflow
 
----
-
-### DHCP Range
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| Start IP | First address in pool | 192.168.4.100 |
-| End IP | Last address in pool | 192.168.4.200 |
-| Lease time | Duration of DHCP lease | 86400 (24 hours) |
-
----
-
-### Diagnostics
-
-| Diagnostic | Description |
-|------------|-------------|
-| Connected clients | List of devices with IP, MAC, hostname |
-| Signal strength | RSSI per client (if available) |
-| DHCP leases | Active lease table |
-| AP status | Up/down, channel utilization |
-
----
-
-## Wi-Fi Configuration Flow
-
-```
-Wi-Fi AP Config
-===============
-
-Admin opens Network Config
-    |
-    v
-Edit SSID, password, channel
-    |
-    v
-Edit DHCP range (optional)
-    |
-    v
-Save
-    |
-    v
-AP restarts with new settings
-    |
-    v
-Clients may need to reconnect
+```text
+GET /api/admin/wifi
+  -> inspect current safe config + status
+PUT /api/admin/wifi
+  -> validate and persist settings
+POST /api/admin/wifi/start
+  -> write hostapd + dnsmasq files, bring interface up, start AP services
+POST /api/admin/wifi/stop
+  -> stop hostapd and dnsmasq
 ```
 
----
+### Read Config and Status
 
-## Bluetooth Configuration (Super Admin Only)
+`GET /api/admin/wifi` returns:
 
-| Parameter | Description | Access |
-|-----------|-------------|--------|
-| Enable/Disable | Turn Bluetooth on or off | Super Admin |
-| Pair | Pair with client device | Super Admin |
-| Preferred connection | Wi-Fi vs Bluetooth priority | Super Admin |
-| Link quality | Signal strength, connection status | Super Admin |
+- `config`: safe config (password is masked)
+- `status`: AP runtime status (`isRunning`, `ssid`, `channel`, `connectedClients`, `interface`)
 
----
+### Update Config
 
-## Bluetooth Flow
+`PUT /api/admin/wifi` accepts partial updates. Validation errors return `VALIDATION_ERROR` through the standard error middleware.
 
-```
-Bluetooth Config (Super Admin)
-==============================
+Example:
 
-Super Admin opens hidden Bluetooth section
-    |
-    v
-Enable or disable Bluetooth
-    |
-    v
-Pair: Initiate pairing with client
-    |
-    v
-Set preferred connection (Wi-Fi / Bluetooth)
-    |
-    v
-View link quality (RSSI, latency)
+```json
+{
+  "ssid": "SwimEx-Pool-01",
+  "password": "MyStrongPass123",
+  "channel": 6,
+  "hidden": false,
+  "maxClients": 12,
+  "interface": "wlan0"
+}
 ```
 
----
+### Start AP
 
-## Permission Matrix
+`POST /api/admin/wifi/start` performs:
 
-| Feature | Admin | Super Admin |
-|---------|-------|-------------|
-| Wi-Fi SSID | Yes | Yes |
-| Wi-Fi password | Yes | Yes |
-| Wi-Fi channel | Yes | Yes |
-| DHCP range | Yes | Yes |
-| Wi-Fi diagnostics | Yes | Yes |
-| Bluetooth enable/disable | No | Yes |
-| Bluetooth pair | No | Yes |
-| Preferred connection | No | Yes |
-| Link quality | No | Yes |
+1. Write `${CONFIG_DIR}/hostapd.conf`
+2. Write `${CONFIG_DIR}/dnsmasq.conf`
+3. Try interface setup (`ip addr add`, `ip link set up`)
+4. Start `hostapd` (required for success response)
+5. Start `dnsmasq` (best-effort warning on failure)
 
----
+## Operational Constraints
 
-## Security Notes
+### DHCP range is currently fixed
 
-| Setting | Recommendation |
-|---------|----------------|
-| Wi-Fi password | Strong passphrase; change from default |
-| Bluetooth | Disabled by default; enable only when needed |
-| DHCP range | Limit to expected client count |
+Generated `dnsmasq.conf` uses a fixed pool:
 
----
+- `192.168.4.2` to `192.168.4.20` (`24h` lease)
+- gateway/address `192.168.4.1`
 
-## Related Documentation
+This range is not currently exposed as an editable API field.
 
-- [Device Registration](DEVICE_REGISTRATION.md) — MAC-based access control
-- [Communication Bluetooth](../communication/BLUETOOTH.md) — Bluetooth protocol
-- [Admin README](README.md) — Admin panel index
+### Host dependencies
+
+AP start requires host tools/services (`hostapd`, `dnsmasq`, `ip`, `iw`, `systemctl`). In dev containers or non-Linux environments, status/start behavior may be limited.
+
+### Input hardening
+
+- Interface names are sanitized and regex-validated.
+- `ssid`/`password` values reject newline characters before config file generation.
+
+## Config Export/Import Interaction
+
+When exporting server configuration:
+
+- Wi-Fi plaintext password is replaced with `password_encrypted`.
+- Encryption key is derived from `JWT_SECRET`.
+
+If importing onto a server with a different `JWT_SECRET`, decryption can fail and the import response will include:
+
+`wifiConfig: could not decrypt WiFi password (different server key?)`
+
+## Troubleshooting
+
+### AP fails to start
+
+Check:
+
+1. `hostapd` is installed and executable.
+2. Selected interface exists (for example `wlan0`).
+3. Process has permissions for interface and service operations.
+
+### Connected clients always `0`
+
+The counter depends on:
+
+```bash
+iw dev <iface> station dump
+```
+
+If `iw` is unavailable or AP is down, the service reports `0`.
