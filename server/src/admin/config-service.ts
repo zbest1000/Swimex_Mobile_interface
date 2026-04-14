@@ -243,6 +243,8 @@ export function importConfig(
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            skipped.push('wifiConfig');
+            return;
           }
           delete wifiData.password_encrypted;
         }
