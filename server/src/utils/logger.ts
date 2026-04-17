@@ -65,7 +65,15 @@ function openLogFile(): void {
     } else {
       currentFileSize = 0;
     }
-    logStream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
+    const stream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      // Never let log I/O errors crash the server process.
+      console.error(`[LOGGER] File logging disabled after stream error (${err.code ?? 'UNKNOWN'}): ${err.message}`);
+      if (logStream === stream) {
+        logStream = null;
+      }
+    });
+    logStream = stream;
   } catch {
     logStream = null;
   }
