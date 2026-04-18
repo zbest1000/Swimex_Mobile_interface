@@ -30,6 +30,20 @@ let maxFileSize = 10 * 1024 * 1024; // 10 MB default
 let maxFiles = 5;
 let currentFileSize = 0;
 
+function disableFileLoggingDueToError(stream: fs.WriteStream, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[logger] File logging disabled after stream error: ${message}`);
+  try {
+    stream.destroy();
+  } catch {
+    // Best effort; stream may already be closed.
+  }
+  if (logStream === stream) {
+    logStream = null;
+    currentFileSize = 0;
+  }
+}
+
 export function setLogLevel(level: LogLevel | string): void {
   if (level in LEVELS) {
     currentLevel = level as LogLevel;
@@ -65,7 +79,11 @@ function openLogFile(): void {
     } else {
       currentFileSize = 0;
     }
-    logStream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
+    const stream = fs.createWriteStream(logFilePath, { flags: 'a', mode: 0o640 });
+    stream.on('error', (err) => {
+      disableFileLoggingDueToError(stream, err);
+    });
+    logStream = stream;
   } catch {
     logStream = null;
   }
