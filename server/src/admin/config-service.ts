@@ -246,8 +246,30 @@ export function importConfig(
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+
+        // Preserve current password when import payload cannot provide one.
+        // This avoids falling back to the known default AP password.
+        if (!wifiData.password) {
+          const existingWifiRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
+          if (existingWifiRow) {
+            try {
+              const existing = JSON.parse(existingWifiRow.value) as { password?: string };
+              if (existing.password) {
+                wifiData.password = existing.password;
+              }
+            } catch {
+              // Best effort only; validation below handles missing password.
+            }
+          }
+        }
+
+        if (!wifiData.password) {
+          errors.push('wifiConfig: missing WiFi password; import skipped to avoid insecure default fallback');
+          skipped.push('wifiConfig');
+        } else {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
