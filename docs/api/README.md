@@ -19,14 +19,13 @@ This section contains the API reference for the SwimEx EDGE platform. The EDGE S
 
 ## Authentication
 
-Most API endpoints require authentication. Use one of:
+Most API endpoints require a bearer token:
 
 | Method | Description |
 |--------|-------------|
-| Bearer Token | `Authorization: Bearer <access_token>` |
-| Session Cookie | Cookie set by login endpoint |
+| Bearer Token | `Authorization: Bearer <jwt_token>` |
 
-Obtain a token via `POST /api/auth/login`. Refresh with `POST /api/auth/refresh`.
+Obtain a token via `POST /api/auth/login`. If token/session is expired or revoked, re-authenticate with login.
 
 ## Base URL
 
@@ -37,30 +36,26 @@ Obtain a token via `POST /api/auth/login`. Refresh with `POST /api/auth/refresh`
 
 ## Rate Limiting
 
-| Limit | Value |
+Implemented explicit route-level limits (see `auth-routes.ts`):
+
+| Endpoint group | Limit |
 |-------|-------|
-| Login attempts | 5 per minute per IP |
-| API requests | 100 per minute per user (authenticated) |
-| WebSocket connections | 10 per user |
+| `POST /api/auth/login` | 20 requests per 15 minutes (per IP) |
+| `POST /api/auth/register` | 10 requests per hour (per IP) |
+| Commissioning step 1 endpoint | 5 requests per 15 minutes (per IP) |
+
+Other route families do not currently enforce a global 100 req/min limiter in server code.
 
 ## Versioning
 
-The API version is included in responses:
-
-```json
-{
-  "data": { ... },
-  "apiVersion": "1.0"
-}
-```
-
-Breaking changes will increment the major version. Minor versions add fields without removing existing ones.
+The current server does not emit a dedicated `apiVersion` field in standard responses.
+Track API changes by server release/commit and by route definitions under `server/src/http/routes/`.
 
 ## Common Request Headers
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| Authorization | Yes (most endpoints) | `Bearer <access_token>` |
+| Authorization | Yes (most endpoints) | `Bearer <jwt_token>` |
 | Content-Type | Yes (POST/PUT) | `application/json` |
 | Accept | No | `application/json` (default) |
 

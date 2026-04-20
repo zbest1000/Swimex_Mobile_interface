@@ -32,7 +32,7 @@ The SwimEx EDGE platform controls pool equipment and must protect against unauth
 | Closed LAN | No internet required; PLC and clients on isolated networks |
 | TLS | HTTPS, MQTTS for encrypted transport |
 | Credential storage | bcrypt/argon2 for passwords; commissioning codes hashed |
-| Session security | Token expiry; refresh token rotation; HTTPS recommended |
+| Session security | JWT expiry + server-side session revocation checks; HTTPS recommended |
 | Modbus access control | Per-register permissions; read-only vs read-write |
 | Physical safety | STOP always wins; safety stop on disconnect |
 | Super admin recovery | Commissioning codes for account recovery |

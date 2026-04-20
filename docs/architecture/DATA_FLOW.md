@@ -338,7 +338,7 @@ All authentication is server-managed. The EDGE Server validates credentials and 
 |--------|--------|
 | **Token** | Session token with embedded role claims |
 | **Subsequent Requests** | Client includes token in Authorization header or WebSocket handshake |
-| **Token Expiry** | Managed server-side; refresh available |
+| **Token Expiry** | JWT expiry + server-side session row expiry; client re-login required when expired/revoked |
 | **Failed Auth** | No role-specific UI revealed; interface adapts after successful login |
 | **Web Browser (no login)** | Defaults to view-only mode |
 | **MAC Registration** | Server may restrict unregistered devices to view-only even with valid login |

@@ -1,440 +1,203 @@
 # SwimEx EDGE — REST API Reference
 
-This document describes the REST API endpoints exposed by the SwimEx EDGE Server.
+This reference is validated against current route handlers under `server/src/http/routes/*.ts` and `server/src/http/server.ts`.
 
 ## Base URL
 
+```text
+http://<server-ip>:<HTTP_PORT>/api
 ```
-http://<server-ip>:<port>/api
-```
 
-Default port: 80 (HTTP), 443 (HTTPS).
+Default `HTTP_PORT` is `80`.
 
-## Authentication Endpoints
+## Response Envelope
 
-### POST /api/auth/login
-
-Authenticate and obtain access token.
-
-**Request:**
+Most endpoints return:
 
 ```json
 {
-  "username": "admin",
-  "password": "SecurePass123!"
+  "success": true,
+  "data": {}
 }
 ```
 
-**Response (200):**
+Failures use:
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresIn": 3600,
-  "user": {
-    "id": "usr_abc123",
-    "username": "admin",
-    "role": "admin",
-    "displayName": "Administrator"
+  "success": false,
+  "error": {
+    "code": "SOME_CODE",
+    "message": "Human-readable message"
   }
 }
 ```
 
-**Errors:** 401 (invalid credentials), 429 (rate limited)
+## Authentication
 
-### POST /api/auth/register
+- Bearer auth header: `Authorization: Bearer <jwt>`
+- Login endpoint: `POST /api/auth/login`
+- **No refresh-token endpoint is currently implemented**
 
-Register a new user (requires admin or unauthenticated during commissioning).
+### Example: login
 
-**Request:**
-
-```json
-{
-  "username": "newuser",
-  "password": "SecurePass123!",
-  "displayName": "New User",
-  "role": "user"
-}
-```
-
-**Response (201):**
+**Request**
 
 ```json
 {
-  "id": "usr_xyz789",
-  "username": "newuser",
-  "role": "user",
-  "displayName": "New User",
-  "createdAt": "2025-02-23T12:00:00Z"
+  "username": "admin",
+  "password": "admin123"
 }
 ```
 
-**Errors:** 400 (validation), 409 (username exists)
-
-### POST /api/auth/refresh
-
-Refresh access token using refresh token.
-
-**Request:**
+**Response (shape)**
 
 ```json
 {
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "success": true,
+  "data": {
+    "token": "<jwt>",
+    "user": {
+      "id": "uuid",
+      "username": "admin",
+      "role": "ADMINISTRATOR"
+    },
+    "commissioned": false,
+    "commissioningRequired": false
+  }
 }
 ```
 
-**Response (200):**
+## Public Endpoints (no auth)
 
-```json
-{
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "expiresIn": 3600
-}
-```
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/health` | Server liveness/uptime payload |
+| GET | `/api/features` | Public-visible feature flags |
+| GET | `/api/branding` | Branding metadata |
+| GET | `/api/logos/:type` | Public logo bytes |
+| GET | `/api/i18n/config` | i18n defaults |
+| GET | `/api/i18n/languages` | Installed language packs |
+| GET | `/api/i18n/:locale` | Translation payload |
+| GET | `/api/auth/system-status` | Commissioning state |
+| POST | `/api/auth/login` | Obtain JWT/session |
+| POST | `/api/auth/register` | User self-registration (only after commissioning) |
+| POST | `/api/auth/reset-super-admin` | Recovery flow via commissioning code |
+| GET | `/api/admin/layouts/active` | Active layout for clients |
+| GET | `/api/admin/public/branding` | Public branding mirror |
 
-**Errors:** 401 (invalid or expired refresh token)
+## Authenticated User Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/auth/me` | Current user + preferences |
+| PUT | `/api/auth/me/preferences` | Update preferences |
+| PUT | `/api/auth/me/password` | Change own password |
+| POST | `/api/auth/logout` | Revoke current session |
+| GET | `/api/users/me` | Current user profile (duplicate surface) |
+| PATCH | `/api/users/me/preferences` | Update preferences |
+| PUT | `/api/users/me/password` | Change own password |
+| POST | `/api/users/me/profile-photo` | Upload profile photo |
 
 ## Workout Endpoints
 
-### GET /api/workouts
-
-List all workout programs.
-
-**Query Parameters:** `page`, `limit`, `search`
-
-**Response (200):**
-
-```json
-{
-  "workouts": [
-    {
-      "id": "wrk_001",
-      "name": "Interval Training",
-      "description": "30 min interval program",
-      "duration": 1800,
-      "steps": 5,
-      "createdAt": "2025-02-23T12:00:00Z"
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "limit": 20
-}
-```
-
-### POST /api/workouts
-
-Create a new workout program.
-
-**Request:**
-
-```json
-{
-  "name": "Custom Program",
-  "description": "User-defined workout",
-  "steps": [
-    {
-      "duration": 300,
-      "speed": 50,
-      "type": "steady"
-    },
-    {
-      "duration": 60,
-      "speed": 80,
-      "type": "sprint"
-    }
-  ]
-}
-```
-
-**Response (201):**
-
-```json
-{
-  "id": "wrk_002",
-  "name": "Custom Program",
-  "description": "User-defined workout",
-  "steps": [...],
-  "createdAt": "2025-02-23T12:00:00Z"
-}
-```
-
-### GET /api/workouts/:id
-
-Get a single workout by ID.
-
-**Response (200):**
-
-```json
-{
-  "id": "wrk_001",
-  "name": "Interval Training",
-  "description": "30 min interval program",
-  "duration": 1800,
-  "steps": [
-    {
-      "id": "stp_001",
-      "duration": 300,
-      "speed": 50,
-      "type": "steady",
-      "order": 1
-    }
-  ],
-  "createdAt": "2025-02-23T12:00:00Z"
-}
-```
-
-**Errors:** 404 (not found)
-
-### PUT /api/workouts/:id
-
-Update a workout program.
-
-**Request:** Same as POST /api/workouts (partial update supported)
-
-**Response (200):** Updated workout object
-
-**Errors:** 404 (not found), 400 (validation)
-
-### DELETE /api/workouts/:id
-
-Delete a workout program.
-
-**Response (204):** No content
-
-**Errors:** 404 (not found), 409 (in use)
-
-## User Endpoints
-
-### GET /api/users/me
-
-Get current user profile.
-
-**Response (200):**
-
-```json
-{
-  "id": "usr_abc123",
-  "username": "admin",
-  "role": "admin",
-  "displayName": "Administrator",
-  "preferences": {
-    "theme": "dark",
-    "units": "metric"
-  },
-  "createdAt": "2025-02-23T12:00:00Z"
-}
-```
-
-### PUT /api/users/me
-
-Update current user profile.
-
-**Request:**
-
-```json
-{
-  "displayName": "Admin User",
-  "preferences": {
-    "theme": "light",
-    "units": "imperial"
-  }
-}
-```
-
-**Response (200):** Updated user object
-
-## Admin Endpoints
-
-Requires `admin` or `super_admin` role.
-
-### GET /api/admin/users
-
-List all users.
-
-**Query Parameters:** `page`, `limit`, `role`, `search`
-
-**Response (200):**
-
-```json
-{
-  "users": [
-    {
-      "id": "usr_abc123",
-      "username": "admin",
-      "role": "admin",
-      "displayName": "Administrator",
-      "createdAt": "2025-02-23T12:00:00Z"
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "limit": 20
-}
-```
-
-### PUT /api/admin/users/:id/role
-
-Update user role.
-
-**Request:**
-
-```json
-{
-  "role": "admin"
-}
-```
-
-**Response (200):** Updated user object
-
-**Errors:** 404 (not found), 403 (cannot change own role)
-
-### GET /api/admin/devices
-
-List registered devices.
-
-**Response (200):**
-
-```json
-{
-  "devices": [
-    {
-      "id": "dev_001",
-      "macAddress": "AA:BB:CC:DD:EE:FF",
-      "name": "Pool Tablet 1",
-      "status": "online",
-      "lastSeen": "2025-02-23T12:00:00Z"
-    }
-  ],
-  "total": 1
-}
-```
-
-### POST /api/admin/devices
-
-Register a new device.
-
-**Request:**
-
-```json
-{
-  "macAddress": "AA:BB:CC:DD:EE:FF",
-  "name": "Pool Tablet 1"
-}
-```
-
-**Response (201):** Created device object
-
-**Errors:** 400 (invalid MAC), 409 (already registered)
-
-## Tag Endpoints
-
-### GET /api/tags
-
-List all object tags (data points for UI binding).
-
-**Query Parameters:** `category`, `search`
-
-**Response (200):**
-
-```json
-{
-  "tags": [
-    {
-      "id": "tag_001",
-      "name": "pool.speed",
-      "dataType": "float",
-      "unit": "percent",
-      "value": 50.0,
-      "updatedAt": "2025-02-23T12:00:00Z"
-    }
-  ]
-}
-```
-
-### POST /api/tags
-
-Create a tag (admin only).
-
-**Request:**
-
-```json
-{
-  "name": "pool.temperature",
-  "dataType": "float",
-  "unit": "celsius",
-  "defaultValue": 28.0
-}
-```
-
-**Response (201):** Created tag object
-
-### GET /api/tags/:id
-
-Get a single tag by ID.
-
-**Response (200):** Tag object
-
-**Errors:** 404 (not found)
-
-### PUT /api/tags/:id
-
-Update a tag.
-
-**Request:** Partial tag object
-
-**Response (200):** Updated tag object
-
-**Errors:** 404 (not found)
-
-### DELETE /api/tags/:id
-
-Delete a tag.
-
-**Response (204):** No content
-
-**Errors:** 404 (not found), 409 (in use)
-
-## System Endpoints
-
-### GET /api/health
-
-Health check (no authentication required).
-
-**Response (200):**
-
-```json
-{
-  "status": "ok",
-  "version": "1.0.0",
-  "database": "connected",
-  "mqtt": "running",
-  "uptime": 3600
-}
-```
-
-### GET /api/system/status
-
-System status (authenticated, admin recommended).
-
-**Response (200):**
-
-```json
-{
-  "version": "1.0.0",
-  "uptime": 3600,
-  "database": {
-    "status": "connected",
-    "size": 10485760
-  },
-  "mqtt": {
-    "status": "running",
-    "clients": 3
-  },
-  "modbus": {
-    "status": "connected",
-    "plcAddress": "192.168.10.1"
-  }
-}
-```
+### Read endpoints
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/workouts/active` | Optional |
+| GET | `/api/workouts/state` | No |
+| GET | `/api/workouts/presets` | No |
+| GET | `/api/workouts/programs` | Yes |
+| GET | `/api/workouts/programs/:id` | Yes |
+| GET | `/api/workouts/history` | Yes |
+| GET | `/api/workouts/stats` | Yes |
+
+### Write/control endpoints
+
+These routes require:
+`authenticate` + `checkDeviceRegistration` + `requireRegisteredDevice`.
+
+Admin/Super Admin bypass device-registration enforcement.
+
+| Method | Path |
+|---|---|
+| POST | `/api/workouts/quick-start` |
+| POST | `/api/workouts/start-program` |
+| POST | `/api/workouts/start-preset` |
+| POST | `/api/workouts/start-interval` |
+| POST | `/api/workouts/pause` |
+| POST | `/api/workouts/resume` |
+| POST | `/api/workouts/stop` |
+| POST | `/api/workouts/set-speed` |
+| POST | `/api/workouts/adjust-speed` |
+
+### Program CRUD
+
+| Method | Path |
+|---|---|
+| POST | `/api/workouts/programs` |
+| PUT | `/api/workouts/programs/:id` |
+| DELETE | `/api/workouts/programs/:id` |
+| POST | `/api/workouts/programs/:id/clone` |
+
+## Admin Endpoints (high level)
+
+Admin routes live under `/api/admin/*`.
+
+Key groups:
+
+- Dashboard/status: `/dashboard`
+- Device management: `/devices`, `/devices/:id/*`, import/export
+- Communication config: `/communication*`
+- Tag mappings: `/tags*`
+- Feature flags: `/feature-flags*` (Super Admin)
+- Layout management: `/layouts*`
+- Wi-Fi AP operations: `/wifi`, `/wifi/start`, `/wifi/stop`
+- Config export/import: `/config/export`, `/config/import` (import requires Super Admin)
+- Branding/logo management: `/branding`, `/logos*`
+- i18n pack management: `/i18n/*`
+- Audit logs: `/audit-log`
+
+## Graphics Endpoints
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/graphics` | Optional |
+| GET | `/api/graphics/categories` | No |
+| GET | `/api/graphics/:id` | Optional |
+| GET | `/api/graphics/:id/file` | No |
+| POST | `/api/graphics` | Editor roles |
+| PUT | `/api/graphics/:id` | Editor roles |
+| DELETE | `/api/graphics/:id` | Editor roles |
+
+Editor roles: `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `MAINTENANCE`.
+
+## Commissioning Endpoints
+
+Super Admin protected:
+
+| Method | Path |
+|---|---|
+| POST | `/api/auth/commission/step1-codes` |
+| POST | `/api/auth/commission/step2-accounts` |
+| POST | `/api/auth/commission/step3-network` |
+| POST | `/api/auth/commission/step4-plc` |
+| POST | `/api/auth/commission/step5-finalize` |
+| GET | `/api/auth/commission/status` |
+
+## Rate Limits (implemented)
+
+| Endpoint | Limit |
+|---|---|
+| `POST /api/auth/login` | 20 requests / 15 min |
+| `POST /api/auth/register` | 10 requests / hour |
+| `POST /api/auth/commission/step1-codes` | 5 requests / 15 min |
+
+## Constraints and Pitfalls
+
+- Do not build clients around `/api/auth/refresh`; it is not present.
+- Session validity requires both:
+  - a valid JWT signature/exp, and
+  - an active non-revoked row in `sessions`.
+- Some resource surfaces are duplicated (`/api/auth/me` and `/api/users/me`); prefer one consistently in clients.

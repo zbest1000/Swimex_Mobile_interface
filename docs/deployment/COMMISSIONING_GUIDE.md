@@ -13,133 +13,92 @@ Commissioning is a one-time process performed after server installation. It conf
 - Commissioning codes from SwimEx and BSC Industries
 - Network information for Ethernet (PLC) and Wi-Fi (clients)
 
-## Commissioning Steps
+## Commissioning Steps (Current Backend Flow)
 
-### Step 1: Enter SwimEx Code
+The backend currently exposes a **5-step commissioning flow** under `/api/auth/commission/*`.
 
-| Field | Format | Example |
-|-------|--------|---------|
-| SwimEx Code | 4 segments × 6 alphanumeric characters | `ABC123` `DEF456` `GHI789` `JKL012` |
+### Step 1: Set Commissioning Codes (`/api/auth/commission/step1-codes`)
 
-- Enter the 24-character code in four segments of six characters each.
-- Codes are stored as a hash; plaintext is never persisted.
-- Codes cannot be changed via the UI after commissioning.
+Request fields:
 
-[Placeholder: Screenshot of SwimEx code entry screen]
+| Field | Required | Format |
+|-------|----------|--------|
+| `swimexCode` | Yes | `XXXXXX-XXXXXX-XXXXXX-XXXXXX` |
+| `bscCode` | Yes | `XXXXXX-XXXXXX-XXXXXX-XXXXXX` |
 
-### Step 2: Enter BSC Industries Code
+Notes:
 
-| Field | Format | Example |
-|-------|--------|---------|
-| BSC Industries Code | 4 segments × 6 alphanumeric characters | `XYZ987` `UVW654` `RST321` `PON098` |
+- Both codes must be 4 segments of 6 alphanumeric chars.
+- Codes are hashed with Argon2id before storage.
+- Rate-limited to 5 attempts per 15 minutes.
 
-- Same format as SwimEx code.
-- Both codes are required for Super Admin recovery.
+### Step 2: Configure Accounts (`/api/auth/commission/step2-accounts`)
 
-[Placeholder: Screenshot of BSC Industries code entry screen]
+Request fields:
 
-### Step 3: Create Super Admin Account
+| Field | Required | Constraint |
+|-------|----------|------------|
+| `superAdminNewPassword` | Yes | min length 8 |
+| `adminUsername` | Yes | min length 3 |
+| `adminPassword` | Yes | min length 4 |
+| `adminDisplayName` | No | fallback to `adminUsername` |
+
+Notes:
+
+- Changes current Super Admin password.
+- Creates initial Administrator account.
+
+### Step 3: Configure Network (`/api/auth/commission/step3-network`)
+
+Request fields:
+
+| Field | Required | Default |
+|-------|----------|---------|
+| `wifiSsid` | No | `PoolCtrl` |
+| `wifiPassword` | No | implementation default |
+| `wifiChannel` | No | `6` |
+| `serverIp` | No | empty |
+| `subnetMask` | No | `255.255.255.0` |
+| `gateway` | No | empty |
+
+Notes:
+
+- Persists legacy `system_config` keys.
+- Also attempts to update unified Wi-Fi AP config via `wifi-service`.
+
+### Step 4: Configure PLC Communication (`/api/auth/commission/step4-plc`)
+
+Request fields:
+
+| Field | Required | Default |
+|-------|----------|---------|
+| `protocol` | No | `MQTT` |
+| `plcIp` | No | empty |
+| `plcPort` | No | `502` |
+| `mqttTopicPrefix` | No | `swimex/default` |
+| `modbusUnitId` | No | `1` |
+| `pollingIntervalMs` | No | `500` |
+
+Notes:
+
+- Stores selected protocol/network details in `system_config`.
+- If `protocol` is `MODBUS_TCP` and `plcIp` exists, creates a communication config row.
+
+### Step 5: Finalize (`/api/auth/commission/step5-finalize`)
+
+Request fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| Username | Yes | Unique login name |
-| Password | Yes | Must meet complexity policy |
-| Display Name | No | Optional friendly name |
+| `tabletMacs` | No | Optional list of initial registered devices |
+| `template` | No | Initial layout template (default `modern`) |
 
-Password policy:
+Finalization actions:
 
-- Minimum 8 characters
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one digit
-- At least one special character
-
-[Placeholder: Screenshot of Super Admin creation form]
-
-### Step 4: Create Admin Account
-
-- Create at least one Admin account for day-to-day operations.
-- Same field requirements as Super Admin.
-- Admin can manage users, devices, and configuration; Super Admin can additionally recover access via commissioning codes.
-
-[Placeholder: Screenshot of Admin creation form]
-
-### Step 5: Configure Ethernet (PLC)
-
-Configure the Ethernet interface for PLC communication:
-
-| Setting | Description | Example |
-|---------|-------------|---------|
-| IP Address | Static IP on PLC network | 192.168.10.10 |
-| Subnet Mask | Network mask | 255.255.255.0 |
-| Gateway | Default gateway (optional) | 192.168.10.1 |
-| DNS | DNS servers (optional) | — |
-
-- Use a static IP; DHCP is not recommended for PLC interface.
-- Ensure the IP is in the same subnet as the PLC.
-
-[Placeholder: Screenshot of Ethernet configuration]
-
-### Step 6: Configure Wi-Fi AP
-
-Configure the built-in Wi-Fi Access Point for client tablets:
-
-| Setting | Description | Example |
-|---------|-------------|---------|
-| SSID | Network name | PoolCtrl |
-| Password | WPA2 password | 8+ characters |
-| Channel | Wi-Fi channel (2.4 GHz) | 6 |
-| DHCP Range | IP range for clients | 192.168.20.100–200 |
-
-- Clients connect to this SSID to reach the EDGE Server.
-- Ensure the DHCP range does not overlap with other networks.
-
-[Placeholder: Screenshot of Wi-Fi AP configuration]
-
-### Step 7: Configure MQTT
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| Plaintext Port | MQTT without TLS | 1883 |
-| TLS Port | MQTT with TLS | 8883 |
-| Enable TLS | Use TLS for MQTT | No |
-| Authentication | Username/password or anonymous | Anonymous |
-
-- Configure if PLC or other devices use MQTT.
-- Enable TLS for production when supported.
-
-[Placeholder: Screenshot of MQTT configuration]
-
-### Step 8: Select PLC Protocol
-
-Choose the primary protocol for PLC communication:
-
-| Option | Use Case |
-|--------|----------|
-| MQTT | PLC supports MQTT client; publish/subscribe |
-| Modbus TCP | PLC is Modbus TCP server |
-| HTTP | PLC exposes REST API |
-
-- Select the protocol that matches your PLC hardware.
-- Protocol-specific configuration (e.g., Modbus register map) can be configured later in the admin panel.
-
-[Placeholder: Screenshot of PLC protocol selection]
-
-### Step 9: Optional — Import Backup
-
-- If migrating from an existing installation, select a backup file to import.
-- Restores users, devices, workout programs, and configuration.
-- Commissioning codes and Super Admin are not overwritten by backup import.
-
-[Placeholder: Screenshot of backup import]
-
-### Step 10: Optional — Register Tablets
-
-- Pre-register tablet MAC addresses for device lockdown.
-- Devices can also be registered later via the admin panel.
-- Each tablet must be registered to access the kiosk UI.
-
-[Placeholder: Screenshot of tablet registration]
+- Registers provided tablet MAC addresses.
+- Creates default UI layout.
+- Seeds sample workout programs.
+- Marks system commissioned (`system_config.commissioned=true`).
 
 ## Completion
 

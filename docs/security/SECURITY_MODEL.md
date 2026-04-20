@@ -25,14 +25,14 @@ An attacker gains control of pool speed, starts/stops the pool, or modifies work
 
 | Control | Description |
 |---------|-------------|
-| MAC registration | Only devices with registered MAC addresses can access the kiosk UI. Unregistered devices receive 403. |
+| MAC registration | Workout write APIs require registered device MAC for non-admin users (`X-Device-MAC`). |
 | RBAC | Pool control commands require appropriate role. User role can control pool; anonymous cannot. |
 | Device binding | Sessions can be tied to registered devices for additional verification. |
 
 ### Implementation
 
 - `RegisteredDevice` table stores allowed MAC addresses.
-- API and WebSocket validate device registration for kiosk endpoints.
+- Workout write API routes enforce device registration through middleware.
 - Admin panel manages device registration.
 
 ## Unauthorized System Access
@@ -48,7 +48,7 @@ An attacker gains access to admin functions, user management, or system configur
 | RBAC | super_admin, admin, user roles. Admin endpoints require admin or super_admin. |
 | Strong authentication | Passwords must meet complexity; bcrypt/argon2 for hashing. |
 | Commissioning codes | Super admin recovery requires both SwimEx and BSC Industries codes. |
-| Session security | Short-lived access tokens; refresh token rotation; HTTPS for transport. |
+| Session security | JWT + server-side session validation; revocation on logout/password change; HTTPS transport recommended. |
 
 ### Role Permissions
 
@@ -120,10 +120,10 @@ Passwords or commissioning codes are stolen from storage or memory.
 
 | Control | Description |
 |---------|-------------|
-| Short expiry | Access tokens expire (e.g., 1 hour). |
-| Refresh rotation | Refresh tokens rotate on use; old token invalidated. |
+| Session + JWT expiry | JWT expiration plus `sessions` table expiration both gate access. |
+| Server-side revocation | Logout/password-change/disable operations revoke server-side sessions. |
 | HTTPS | Tokens transmitted only over TLS in production. |
-| HttpOnly cookies | If using cookies, HttpOnly and Secure flags. |
+| Header-based auth | Primary auth transport is bearer token header. |
 
 ## Session Security
 
@@ -137,7 +137,7 @@ Session hijacking, token theft, or replay attacks.
 |---------|-------------|
 | Token expiry | Access tokens expire; limit exposure window. |
 | HTTPS | Encrypts tokens in transit. |
-| Refresh token | Stored securely; used only to obtain new access token. |
+| Session row check | Protected REST routes verify JWT and active non-revoked session row. |
 | Logout | Logout invalidates tokens; server-side session invalidation. |
 
 ## Modbus TCP Access Control
@@ -203,7 +203,7 @@ All admin accounts are locked out (forgot password, account disabled).
 
 ### Recovery Process
 
-1. Navigate to recovery endpoint (e.g., `/recover`).
+1. Call the recovery endpoint `POST /api/auth/reset-super-admin`.
 2. Enter SwimEx code (4 segments).
 3. Enter BSC Industries code (4 segments).
 4. Create new Super Admin account.

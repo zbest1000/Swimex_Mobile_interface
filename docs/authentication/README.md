@@ -10,7 +10,7 @@ This section documents the authentication and authorization model for the SwimEx
 |----------|-------------|
 | [Roles and Permissions](ROLES_AND_PERMISSIONS.md) | Full RBAC: Super Admin, Admin, Maintenance, User, Guest. Permissions matrix, kiosk exit, user management, diagnostics, UI builder. |
 | [Commissioning Codes](COMMISSIONING_CODES.md) | Super Admin reset: 4-segment x 6-char alphanumeric codes, SwimEx and BSC Industries code sets, hash-only storage, reset flow, escalating lockout, audit logging, tamper detection. |
-| [Session Management](SESSION_MANAGEMENT.md) | Token-based sessions, server-side validation, role claims in token, token expiry/refresh, MAC address check for write access (registered vs unregistered devices). |
+| [Session Management](SESSION_MANAGEMENT.md) | JWT + server-side session rows, revocation checks, expiry/re-authentication behavior, and MAC-based write access controls. |
 
 ---
 
@@ -73,7 +73,7 @@ Client / Web App                    EDGE Server
 ## Security Notes
 
 - All credentials are validated server-side; never trust client-side role checks for authorization
-- Tokens expire; clients must refresh or re-authenticate
+- Tokens expire; clients must re-authenticate (no refresh-token endpoint)
 - Unregistered devices receive view-only access regardless of user role
 - Commissioning codes are stored as hashes only; never stored in plain text
 
@@ -84,4 +84,4 @@ Client / Web App                    EDGE Server
 - [Client](../client/) — Kiosk exit flow, authentication prompts
 - [Server](../server/) — Auth engine, token validation
 - [Security](../security/) — Threat mitigation, audit logging
-- [API](../api/) — REST endpoints for login, logout, token refresh
+- [API](../api/) — REST endpoints for login, logout, and current-user flows
