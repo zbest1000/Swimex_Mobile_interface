@@ -1,252 +1,158 @@
 # SwimEx EDGE — WebSocket API Reference
 
-This document describes the WebSocket API for real-time pool control and state updates.
+This reference is validated against `server/src/websocket/ws-handler.ts`.
 
-## Connection
+## Endpoint
 
-### Endpoint
-
-```
-ws://<server-ip>:<port>/ws
-wss://<server-ip>:<port>/ws  (TLS)
+```text
+ws://<server-ip>:<HTTP_PORT>/ws
 ```
 
-Default port: 80 (ws), 443 (wss).
+Optional token-in-URL is supported:
 
-### Connection Example
-
-```javascript
-const ws = new WebSocket('ws://192.168.1.100/ws');
-
-ws.onopen = () => {
-  console.log('Connected');
-  // Send authentication
-  ws.send(JSON.stringify({
-    type: 'auth',
-    token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-  }));
-};
-
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  console.log('Received:', msg);
-};
-
-ws.onclose = () => {
-  console.log('Disconnected');
-};
+```text
+ws://<server-ip>:<HTTP_PORT>/ws?token=<jwt>
 ```
+
+## Message Envelope
+
+Messages are JSON objects:
+
+```json
+{
+  "type": "message_type",
+  "payload": {},
+  "timestamp": 1713628800000
+}
+```
+
+`timestamp` is added by server if not supplied.
 
 ## Authentication
 
-Send the authentication message immediately after connection:
+Two supported patterns:
 
-**Client -> Server:**
-
-```json
-{
-  "type": "auth",
-  "token": "<access_token>"
-}
-```
-
-**Server -> Client (success):**
+1. Connect with `?token=<jwt>` query param.
+2. Send an `authenticate` message after connect:
 
 ```json
 {
-  "type": "auth_ok",
-  "userId": "usr_abc123",
-  "role": "user"
+  "type": "authenticate",
+  "payload": {
+    "token": "<jwt>"
+  }
 }
 ```
 
-**Server -> Client (failure):**
+### Auth result messages
+
+Success:
 
 ```json
 {
-  "type": "auth_failed",
-  "error": "Invalid or expired token"
+  "type": "authenticated",
+  "payload": {
+    "userId": "uuid",
+    "username": "admin",
+    "role": "ADMINISTRATOR"
+  }
 }
 ```
 
-If authentication fails, the connection may be closed. Unauthenticated connections have limited access (e.g., read-only).
-
-## Events from Server
-
-### speed_update
-
-Current pool speed/flow value.
+Failure:
 
 ```json
 {
-  "type": "speed_update",
-  "value": 50.0,
-  "unit": "percent",
-  "timestamp": "2025-02-23T12:00:00.000Z"
+  "type": "auth_error",
+  "payload": {
+    "message": "Invalid or expired token"
+  }
 }
 ```
 
-### state_change
+> Constraint: WebSocket authentication currently validates JWT signature/expiry, but does not run the REST middleware's `sessions` table revocation check.
 
-Pool or system state changed.
+## Server -> Client Message Types
+
+| Type | Purpose |
+|---|---|
+| `connected` | Initial connection snapshot (client id, auth state, pool id, connection status) |
+| `authenticated` | Auth success confirmation |
+| `auth_error` | Auth failure |
+| `keepalive` | Pong response payloads |
+| `workout_update` | Workout lifecycle events/ticks |
+| `tag_update` | Subscribed tag value updates |
+| `tag_value` | Response to `get_tag` |
+| `tags_snapshot` | Response to `get_tags` |
+| `connection_status` | MQTT/Modbus/WS status heartbeat |
+| `command_ack` | Command accepted |
+| `command_error` | Command failed |
+| `safety_stop` | Broadcast when safety stop is triggered |
+| `error` | Generic protocol/auth/parse errors |
+
+## Client -> Server Message Types
+
+| Type | Payload fields | Notes |
+|---|---|---|
+| `authenticate` | `token` | Authenticates socket user |
+| `keepalive` | `sequenceNumber` (optional) | Server responds with `keepalive` pong |
+| `command` | `command`, plus command-specific fields | Workout and tag commands |
+| `subscribe_tags` | `tags: string[]` | Wildcard `*` requires admin/maintenance role |
+| `unsubscribe_tags` | `tags: string[]` | Stops updates for listed tags |
+| `get_tag` | `address` | Returns `tag_value` |
+| `get_tags` | `addresses: string[]` | Returns `tags_snapshot` |
+| `get_workout` | none | Returns current workout snapshot |
+
+## Command Payloads
+
+Sent as:
 
 ```json
 {
-  "type": "state_change",
-  "state": "running",
-  "previousState": "idle",
-  "timestamp": "2025-02-23T12:00:00.000Z"
+  "type": "command",
+  "payload": {
+    "command": "QUICK_START",
+    "speed": 50,
+    "durationMs": null
+  }
 }
 ```
 
-States: `idle`, `running`, `paused`, `safety_stop`, `error`, `maintenance`
+Supported `command` values:
 
-### workout_progress
+- `QUICK_START`
+- `START_PROGRAM` (`programId` required)
+- `START_PRESET` (`type`, `level`)
+- `START_INTERVAL` (`sets`, `step1`, `step2`)
+- `START`
+- `STOP`
+- `PAUSE`
+- `RESUME`
+- `SET_SPEED` (`speed`)
+- `ADJUST_SPEED` (`delta`)
+- `WRITE_TAG` (`tagAddress`, `value`) — restricted to `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `MAINTENANCE`
 
-Workout session progress update.
+## Keepalive and Disconnect Behavior
 
-```json
-{
-  "type": "workout_progress",
-  "sessionId": "sess_001",
-  "workoutId": "wrk_001",
-  "currentStep": 2,
-  "totalSteps": 5,
-  "elapsedSeconds": 360,
-  "remainingSeconds": 1440,
-  "currentSpeed": 60.0,
-  "timestamp": "2025-02-23T12:00:00.000Z"
-}
-```
+- Server sends WebSocket ping frames every `HEARTBEAT_INTERVAL_MS`.
+- Missed pings are counted; socket is terminated after `HEARTBEAT_MISSED_THRESHOLD` misses.
+- Clients may also send `keepalive` messages and receive pong payloads.
 
-### safety_stop
-
-Safety stop triggered (e.g., emergency stop, disconnect).
-
-```json
-{
-  "type": "safety_stop",
-  "reason": "emergency_stop",
-  "message": "Emergency stop activated",
-  "timestamp": "2025-02-23T12:00:00.000Z"
-}
-```
-
-### connection_status
-
-PLC or device connection status.
-
-```json
-{
-  "type": "connection_status",
-  "target": "plc",
-  "status": "connected",
-  "lastError": null,
-  "timestamp": "2025-02-23T12:00:00.000Z"
-}
-```
-
-### tag_value_update
-
-Object tag value changed (for UI binding).
-
-```json
-{
-  "type": "tag_value_update",
-  "tagId": "tag_001",
-  "tagName": "pool.speed",
-  "value": 55.0,
-  "dataType": "float",
-  "timestamp": "2025-02-23T12:00:00.000Z"
-}
-```
-
-## Events from Client
-
-### command_start
-
-Start pool or workout.
-
-```json
-{
-  "type": "command_start",
-  "workoutId": "wrk_001"
-}
-```
-
-Optional `workoutId`; omit to start at current speed.
-
-### command_stop
-
-Stop pool.
-
-```json
-{
-  "type": "command_stop"
-}
-```
-
-### command_speed
-
-Set speed directly.
-
-```json
-{
-  "type": "command_speed",
-  "value": 75.0,
-  "unit": "percent"
-}
-```
-
-### command_pause
-
-Pause current workout or pool.
-
-```json
-{
-  "type": "command_pause"
-}
-```
-
-## Message Format
-
-All messages are JSON objects with a `type` field. Additional fields depend on the message type.
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| type | Yes | Message type (string) |
-| ... | Varies | Type-specific fields |
-
-## Ping/Pong
-
-The server may send ping frames. Clients should respond with pong. Inactivity may result in connection closure after a timeout (typically 60 seconds).
-
-## Reconnection
+## Reconnection Guidance
 
 On disconnect:
 
-1. Wait a short interval (e.g., 1-5 seconds).
-2. Reconnect to the WebSocket URL.
-3. Re-authenticate with a valid token (refresh if expired).
-4. Re-subscribe to any channels if the protocol supports subscriptions.
+1. Reconnect to `/ws`.
+2. Re-authenticate (`authenticate` message or `?token=`).
+3. Re-send tag subscriptions.
+4. Re-fetch workout snapshot (`get_workout`) if needed.
 
-## Error Handling
+## Minimal Example Session
 
-| Scenario | Server Action |
-|----------|---------------|
-| Invalid JSON | Send `{"type":"error","code":"invalid_json","message":"Invalid JSON"}` |
-| Unknown message type | Send `{"type":"error","code":"unknown_type","message":"Unknown message type"}` |
-| Unauthorized command | Send `{"type":"error","code":"unauthorized","message":"Insufficient permissions"}` |
-| Rate limit exceeded | Send error and may close connection |
-
-## Example Session
-
-```
-Client -> Server: {"type":"auth","token":"..."}
-Server -> Client: {"type":"auth_ok","userId":"usr_001","role":"user"}
-Server -> Client: {"type":"state_change","state":"idle","previousState":null,"timestamp":"..."}
-Server -> Client: {"type":"speed_update","value":0,"unit":"percent","timestamp":"..."}
-Client -> Server: {"type":"command_speed","value":50,"unit":"percent"}
-Server -> Client: {"type":"speed_update","value":50,"unit":"percent","timestamp":"..."}
-Server -> Client: {"type":"state_change","state":"running","previousState":"idle","timestamp":"..."}
+```text
+Client -> {"type":"authenticate","payload":{"token":"..."}}
+Server <- {"type":"authenticated","payload":{"userId":"...","username":"...","role":"..."}}
+Client -> {"type":"command","payload":{"command":"SET_SPEED","speed":55}}
+Server <- {"type":"command_ack","payload":{"command":"SET_SPEED","success":true}}
+Server <- {"type":"workout_update","payload":{...}}
 ```

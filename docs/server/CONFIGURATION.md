@@ -1,200 +1,112 @@
 # SwimEx EDGE Server Configuration Reference
 
-This document describes the configuration file format, environment variables, network interfaces, ports, TLS, database, logging, and feature flags for the EDGE Server.
+This document reflects the current server runtime configuration in `server/src/utils/config.ts` and related startup code.
 
-## Config File Format
+## Configuration Model
 
-The primary configuration file is `edge.conf` (or `edge.yaml`). Location varies by platform:
+The server is currently **environment-variable driven**. There is no runtime parser for `edge.conf`/YAML in the server process.
 
-| Platform | Default Path |
-|----------|--------------|
-| Linux | `/etc/swimex-edge/edge.conf` |
-| Windows | `C:\ProgramData\SwimEx\EDGE\edge.conf` |
-| Docker | `/app/config/edge.conf` or via volume mount |
+Primary defaults are loaded in `loadConfig()` and used by:
 
-Format: INI-style or YAML. Example INI:
+- `server/src/app/index.ts` (startup sequence)
+- `server/src/http/server.ts` (HTTP/CORS/security headers)
+- `server/src/mqtt/*` (embedded/external broker behavior)
+- `server/src/admin/wifi-service.ts` (generated hostapd/dnsmasq files under `CONFIG_DIR`)
 
-```ini
-[server]
-host = 0.0.0.0
-http_port = 80
-https_port = 443
+## Core Environment Variables
 
-[mqtt]
-enabled = true
-port = 1883
-tls_port = 8883
+| Variable | Default | Used for |
+|---|---:|---|
+| `HTTP_PORT` | `80` | Express HTTP server listen port |
+| `HTTPS_PORT` | `443` | Reserved in config; HTTPS server not started by default entrypoint |
+| `MODBUS_PORT` | `502` | Modbus TCP server listen port |
+| `MQTT_PORT` | `1883` | MQTT client target port and embedded broker default TCP port |
+| `MQTT_TLS_PORT` | `8883` | Exposed in config object for TLS port conventions |
+| `DATA_DIR` | `server/data` | SQLite path root (`$DATA_DIR/edge.db`) |
+| `CONFIG_DIR` | `server/config` | Generated AP config destination (`hostapd.conf`, `dnsmasq.conf`) |
+| `POOL_ID` | `default` | MQTT topic namespace (`swimex/<poolId>/...`) |
 
-[modbus]
-server_enabled = true
-server_port = 502
-client_enabled = true
+### Developer defaults (non-root ports)
 
-[database]
-path = /var/lib/swimex-edge/data/edge.db
-
-[logging]
-level = info
-file = /var/log/swimex-edge/edge.log
+```bash
+HTTP_PORT=8080 MODBUS_PORT=5020 npm start
 ```
 
-Example YAML:
+## Auth and Session Variables
 
-```yaml
-server:
-  host: 0.0.0.0
-  http_port: 80
-  https_port: 443
+| Variable | Default | Notes |
+|---|---|---|
+| `JWT_SECRET` | random ephemeral value | If unset, generated at boot; all prior JWTs become invalid after restart |
+| `JWT_EXPIRES_IN` | `24h` | JWT `exp` claim duration |
+| `ADMIN_USER` | `admin` | Seed/config default admin username |
+| `ADMIN_PASS` | empty | If set, overrides seeded `admin` password on first run |
+| `SUPERADMIN_PASS` | unset | If set, overrides seeded `superadmin` password on first run |
 
-mqtt:
-  enabled: true
-  port: 1883
-  tls_port: 8883
+> Constraint: session DB rows are currently written with `expires_at = now + 24h` in `auth-service.ts`. Keep `JWT_EXPIRES_IN` aligned with that window to avoid confusing mismatches.
 
-modbus:
-  server_enabled: true
-  server_port: 502
-  client_enabled: true
+## MQTT Mode and Connectivity Variables
 
-database:
-  path: /var/lib/swimex-edge/data/edge.db
+| Variable | Default | Effect |
+|---|---|---|
+| `MQTT_EXTERNAL` | `false` | `false`: start embedded Aedes broker; `true`: connect to external broker only |
+| `MQTT_HOST` | `localhost` | Host for external broker mode |
+| `MQTT_USER` | `edge-server` | MQTT client/broker auth username |
+| `MQTT_PASS` | empty | MQTT client/broker auth password |
+| `MQTT_BROKER_PORT` | `MQTT_PORT` | Embedded broker TCP listen port override |
+| `MQTT_WS_PORT` | `9001` | Embedded broker WebSocket transport port |
+| `MQTT_AUTH` | `true` | Embedded broker auth on/off (`false` disables credential check) |
 
-logging:
-  level: info
-  file: /var/log/swimex-edge/edge.log
-```
+See [MQTT_BROKER.md](MQTT_BROKER.md) for runtime behavior details.
 
-## Environment Variables
+## Logging Variables
 
-Environment variables override config file values. Prefix: `EDGE_`.
+| Variable | Default | Effect |
+|---|---|---|
+| `LOG_LEVEL` | `info` | Minimum emitted level (`debug`, `info`, `security`, `warn`, `error`, `fatal`) |
+| `LOG_FILE` | empty | If set, enables file logging |
+| `LOG_FORMAT` | `text` | `text` or `json` file output format |
+| `LOG_MAX_SIZE_MB` | `10` | Rotation threshold per log file |
+| `LOG_MAX_FILES` | `5` | Number of rotated files retained |
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `EDGE_CONFIG_PATH` | Path to config file | `/etc/swimex-edge/edge.conf` |
-| `EDGE_DB_PATH` | Database file or directory | `/data/db` |
-| `EDGE_HTTP_PORT` | HTTP listen port | `80` |
-| `EDGE_HTTPS_PORT` | HTTPS listen port | `443` |
-| `EDGE_MQTT_PORT` | MQTT plaintext port | `1883` |
-| `EDGE_MQTT_TLS_PORT` | MQTT TLS port | `8883` |
-| `EDGE_MODBUS_PORT` | Modbus TCP server port | `502` |
-| `EDGE_LOG_LEVEL` | Logging level | `debug`, `info`, `warn`, `error` |
-| `EDGE_TLS_CERT` | Path to TLS certificate | `/etc/ssl/certs/edge.pem` |
-| `EDGE_TLS_KEY` | Path to TLS private key | `/etc/ssl/private/edge.key` |
+File logging is configured in `app/index.ts` via `configureFileLogging(...)`.
 
-## Network Interfaces
+## Safety / Simulation Variables
 
-| Interface | Purpose | Typical Config |
-|-----------|---------|----------------|
-| **Ethernet** | PLC communication, Modbus TCP, MQTT from controllers | Static IP on industrial subnet |
-| **Wi-Fi** | Client access, web app, Wi-Fi AP | DHCP or static; AP mode for tablets |
+| Variable | Default | Effect |
+|---|---|---|
+| `HEARTBEAT_INTERVAL_MS` | `2000` | Keepalive ping interval |
+| `HEARTBEAT_MISSED_THRESHOLD` | `3` | Number of missed intervals before timeout event |
+| `DISABLE_PLC_CHECKS` | `false` | Suppresses keepalive timeout safety-stop trigger (demo/dev only) |
+| `SIMULATOR_MODE` | `false` | Enables internal PLC simulator (`true` or `1`) |
 
-Configure via Admin UI or config file:
+## HTTP Security / Access Variables
 
-```ini
-[network.ethernet]
-interface = eth0
-mode = static
-address = 192.168.10.10
-netmask = 255.255.255.0
-gateway = 192.168.10.1
+| Variable | Default | Effect |
+|---|---|---|
+| `CORS_ORIGIN` | allow all | Comma-separated CORS allowlist when set |
+| `ENABLE_HSTS` | `false` | Adds `Strict-Transport-Security` header when `true` |
 
-[network.wifi]
-interface = wlan0
-mode = ap
-ssid = PoolCtrl
-password = <encrypted>
-channel = 6
-dhcp_range = 192.168.20.100,192.168.20.200
-```
+## Data and Persistence Notes
 
-## Ports Reference
+- SQLite DB file: `$DATA_DIR/edge.db`
+- Migrations run automatically at startup.
+- First run seeds default accounts if no users exist.
+- Delete `edge.db`, `edge.db-shm`, and `edge.db-wal` to fully reset local state.
 
-| Port | Protocol | Default | Description |
-|------|----------|---------|-------------|
-| 80 | HTTP | Yes | Web application, REST API |
-| 443 | HTTPS | Yes | TLS-secured web and API |
-| 1883 | MQTT | Yes | MQTT plaintext |
-| 8883 | MQTTS | Yes | MQTT over TLS |
-| 502 | Modbus TCP | Yes | Modbus TCP server |
+## Troubleshooting
 
-All ports are configurable. Ensure firewall rules allow required traffic.
+### Sessions invalid after restart
+Cause: `JWT_SECRET` was not set, so a random secret was generated at boot.
 
-## TLS Settings
+Fix: set a stable `JWT_SECRET` in the environment.
 
-| Setting | Description |
-|---------|-------------|
-| `tls.enabled` | Enable TLS for HTTPS and MQTTS |
-| `tls.cert_file` | Path to certificate (PEM) |
-| `tls.key_file` | Path to private key (PEM) |
-| `tls.ca_file` | Optional CA bundle for client cert verification |
-| `tls.min_version` | Minimum TLS version (e.g., 1.2) |
+### Frequent PLC heartbeat timeout warnings in demo/dev
+Cause: no PLC response to keepalive pings.
 
-```ini
-[tls]
-enabled = true
-cert_file = /etc/ssl/certs/edge.pem
-key_file = /etc/ssl/private/edge.key
-min_version = 1.2
-```
+Fix: enable simulator (`SIMULATOR_MODE=true`) or suppress checks (`DISABLE_PLC_CHECKS=true`) for demo environments.
 
-## Database Location
+### MQTT client cannot connect
 
-| Platform | Default Path |
-|----------|--------------|
-| Linux | `/var/lib/swimex-edge/data/` |
-| Windows | `C:\ProgramData\SwimEx\EDGE\data\` |
-| Docker | `/data` (volume mount) |
-
-The database stores:
-
-- Configuration
-- User accounts and permissions
-- Tag definitions
-- Audit logs
-- Session data
-
-For Docker, mount a persistent volume to `/data` to preserve data across restarts.
-
-## Logging Levels
-
-| Level | Description |
-|-------|-------------|
-| `debug` | Verbose; includes protocol traces |
-| `info` | Normal operation; startup, connections, errors |
-| `warn` | Warnings and recoverable issues |
-| `error` | Errors only |
-
-```ini
-[logging]
-level = info
-file = /var/log/swimex-edge/edge.log
-max_size_bytes = 10485760
-max_files = 5
-```
-
-## Feature Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `features.mqtt_broker` | Enable built-in MQTT broker | `true` |
-| `features.modbus_server` | Enable Modbus TCP server | `true` |
-| `features.modbus_client` | Enable Modbus TCP client | `true` |
-| `features.bluetooth` | Enable Bluetooth (Super Admin only) | `false` |
-| `features.wifi_ap` | Enable Wi-Fi access point | `true` |
-| `features.graphics_editor` | Enable built-in graphics editor | `true` |
-
-```ini
-[features]
-mqtt_broker = true
-modbus_server = true
-modbus_client = true
-bluetooth = false
-wifi_ap = true
-graphics_editor = true
-```
-
-## Config Precedence
-
-1. Environment variables (highest)
-2. Config file
-3. Built-in defaults (lowest)
+1. Confirm mode (`MQTT_EXTERNAL` true/false).
+2. For external mode, verify `MQTT_HOST`, `MQTT_PORT`, credentials.
+3. For embedded mode, check local port collisions (broker may auto-shift TCP port by +10).

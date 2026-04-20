@@ -121,76 +121,58 @@ services:
     volumes:
       - edgedata:/data
     environment:
-      - EDGE_DB_PATH=/data/db
-      - EDGE_LOG_LEVEL=info
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
     restart: unless-stopped
 
 volumes:
   edgedata:
 ```
 
-## First-Run Commissioning Wizard
+## First-Run Commissioning Wizard (Current Server Flow)
 
-On first boot, the server presents a commissioning wizard. Complete all steps before normal operation.
+On first boot, the system starts uncommissioned and tracks progress in `system_config.commissioning_step`. The current API-driven flow has **five** steps:
 
-### Step 1: Commissioning Codes
+### Step 1: Set Commissioning Codes
 
-Enter two sets of commissioning codes:
+Endpoint: `POST /api/auth/commission/step1-codes`
 
-| Code Set | Owner | Format |
-|----------|-------|--------|
-| SwimEx | SwimEx organization | 4 segments × 6 alphanumeric characters |
-| BSC Industries | BSC Industries | 4 segments × 6 alphanumeric characters |
+- Requires authenticated Super Admin
+- Captures both SwimEx and BSC Industries codes
+- Validates format: `XXXXXX-XXXXXX-XXXXXX-XXXXXX` (4×6 alphanumeric)
+- Stores Argon2id hashes only
 
-Codes are hashed and stored; plaintext is never persisted. They are used for Super Admin recovery and cannot be changed via the UI.
+### Step 2: Configure Accounts
 
-### Step 2: Admin Credentials
+Endpoint: `POST /api/auth/commission/step2-accounts`
 
-Create the initial Super Administrator account:
+- Changes current Super Admin password
+- Creates an Administrator account
 
-- Username (required)
-- Password (required; must meet complexity policy)
-- Display name (optional)
+### Step 3: Configure Network
 
-### Step 3: Ethernet Configuration
+Endpoint: `POST /api/auth/commission/step3-network`
 
-Configure the Ethernet interface for PLC communication:
+- Stores Wi-Fi SSID/channel/server IP settings in `system_config`
+- Also updates Wi-Fi AP config via `wifi-service`
 
-| Setting | Description |
-|---------|-------------|
-| IP Address | Static IP on the PLC network |
-| Subnet Mask | Network mask |
-| Gateway | Default gateway (optional) |
-| DNS | DNS servers (optional) |
+### Step 4: Configure PLC Communication
 
-### Step 4: Wi-Fi Access Point
+Endpoint: `POST /api/auth/commission/step4-plc`
 
-Configure the built-in Wi-Fi AP for client devices:
+- Stores protocol + PLC settings
+- Creates active `communication_configs` row when protocol is `MODBUS_TCP`
 
-| Setting | Description |
-|---------|-------------|
-| SSID | Network name (e.g., `PoolCtrl`) |
-| Password | WPA2 password |
-| Channel | Wi-Fi channel (2.4 GHz recommended) |
-| DHCP Range | IP range for client leases |
+### Step 5: Finalize
 
-### Step 5: MQTT Settings
+Endpoint: `POST /api/auth/commission/step5-finalize`
 
-| Setting | Description |
-|---------|-------------|
-| Plaintext Port | Default 1883 |
-| TLS Port | Default 8883 |
-| Enable TLS | Yes/No |
-| Authentication | Username/password or anonymous |
+- Registers initial tablets (if provided)
+- Creates default UI layout
+- Seeds sample workout programs
+- Marks system commissioned
 
-### Step 6: PLC Protocol Selection
+Access commissioning status via:
 
-Choose the primary protocol for PLC communication:
-
-| Option | Use Case |
-|--------|----------|
-| MQTT | PLC supports MQTT client |
-| Modbus TCP | PLC is Modbus TCP server |
-| HTTP | PLC exposes REST API |
-
-The wizard completes and the server enters normal operation. Access the web admin at `https://<server-ip>/admin` (or `http://` if TLS is not configured).
+- `GET /api/auth/system-status` (public)
+- `GET /api/auth/commission/status` (Super Admin)

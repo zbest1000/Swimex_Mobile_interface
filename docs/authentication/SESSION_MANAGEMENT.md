@@ -1,145 +1,96 @@
 # SwimEx EDGE — Session Management
 
-This document describes how the SwimEx EDGE platform manages user sessions: token-based authentication, server-side validation, role claims, and token expiry/refresh. It also covers MAC address-based write access for registered vs unregistered devices.
+This document describes the current auth/session behavior implemented in:
 
----
+- `server/src/auth/auth-service.ts`
+- `server/src/auth/middleware.ts`
+- `server/src/http/routes/auth-routes.ts`
+- `server/src/http/routes/workout-routes.ts`
 
-## Token-Based Sessions
+## Session Model
 
-Sessions are **token-based**:
+SwimEx EDGE uses a **JWT + server-side session row** model.
 
-| Aspect | Value |
-|--------|-------|
-| Token type | JWT or similar signed token |
-| Storage | Client stores in memory or secure storage |
-| Transmission | `Authorization: Bearer <token>` header |
-| Validation | Server validates on each request |
+| Aspect | Current behavior |
+|---|---|
+| Access token | JWT signed with `JWT_SECRET` |
+| Session state | Stored in SQLite `sessions` table |
+| Session pointer | JWT includes `sessionId` claim |
+| Request auth | `Authorization: Bearer <jwt>` |
+| Revocation check | Middleware validates matching non-revoked, non-expired `sessions` row |
 
----
+## Login and Session Creation
 
-## Server-Side Validation
+On `POST /api/auth/login`:
 
-Every authenticated request is validated on the server:
+1. Username/password are verified.
+2. A UUID session id is generated.
+3. JWT is issued with `userId`, `username`, `role`, and `sessionId`.
+4. A `sessions` table row is created (`token=<sessionId>`, `expires_at=now+24h`).
 
-```
-Request Flow
-============
+## Auth Validation Flow
 
-Request: GET /api/...
-        Authorization: Bearer <token>
-        |
-        v
-Server extracts token
-        |
-        v
-Verify signature
-        |
-        v
-Check expiry
-        |
-        v
-Extract role from claims
-        |
-        v
-Apply role-based access control
-        |
-        v
-Process request or return 403
-```
+Every protected request follows this sequence:
 
----
+1. Parse bearer token.
+2. Verify JWT signature + expiry.
+3. Read `sessionId` claim.
+4. Query `sessions` where:
+   - `token = sessionId`
+   - `is_revoked = 0`
+   - `expires_at > now`
+5. Reject if no active row is found.
 
-## Role Claims in Token
+This means token validity depends on both JWT integrity and server-side session state.
 
-The token payload includes role information:
+## Token Claims
 
 | Claim | Purpose |
-|-------|---------|
-| `sub` | User ID |
-| `role` | User role (Super Admin, Admin, Maintenance, User, Guest) |
-| `exp` | Expiration timestamp |
-| `iat` | Issued-at timestamp |
+|---|---|
+| `userId` | User id for request context |
+| `username` | Username for audit/context |
+| `role` | Role-based authorization decisions |
+| `sessionId` | Lookup key into `sessions` table |
+| `iat` / `exp` | JWT issuance and expiration |
 
----
+## Expiry and Re-Authentication
 
-## Token Expiry and Refresh
+- JWT expiry is controlled by `JWT_EXPIRES_IN` (default `24h`).
+- Session DB expiry is currently written as `now + 24h`.
+- **No refresh-token endpoint is implemented.**
+- When token/session expires, clients must re-authenticate with `/api/auth/login`.
 
-| Token Type | Lifetime | Refresh |
-|------------|----------|---------|
-| Access token | Short (e.g., 15–60 min) | Via refresh token |
-| Refresh token | Long (e.g., 7–30 days) | Used to obtain new access token |
+## Revocation Events
 
-Refresh flow:
+Sessions are revoked when:
 
-1. Client sends refresh token to `/api/auth/refresh`
-2. Server validates refresh token
-3. Server issues new access token (and optionally new refresh token)
-4. Client replaces stored tokens
+- User calls `POST /api/auth/logout` (current session revoked)
+- Password is changed (all user sessions revoked)
+- User is disabled (all user sessions revoked)
 
----
+## Device Registration and Write Access
 
-## MAC Address Check for Write Access
+Device registration is enforced by workout write routes via middleware chain:
 
-| Device Status | Write Access |
-|---------------|--------------|
-| Registered | Read and write |
-| Unregistered | View-only |
+`authenticate` → `checkDeviceRegistration` → `requireRegisteredDevice`
 
----
+Behavior:
 
-## Device Registration
+| Condition | Result |
+|---|---|
+| Admin or Super Admin | Bypasses device registration requirement |
+| Non-admin + registered MAC (`X-Device-MAC`) | Write allowed |
+| Non-admin + missing/unregistered MAC | `DEVICE_NOT_REGISTERED` style denial |
 
-| Step | Description |
-|------|-------------|
-| 1 | Client sends MAC address with login or first request |
-| 2 | Server checks if MAC is in registered device list |
-| 3 | If registered: full access (read/write) |
-| 4 | If unregistered: view-only mode |
+Read-only endpoints can still be accessed without registered device status if route policy allows it.
 
----
+## Operational Constraints
 
-## MAC Check Flow
-
-```
-Request with token + MAC
-========================
-
-Token valid
-    |
-    v
-Extract role from token
-    |
-    v
-Role allows write?
-    |
-    +-- No  --> View-only (e.g., Guest)
-    |
-    +-- Yes --> Check MAC
-    |
-    v
-MAC in registered list?
-    |
-    +-- Yes --> Read/write
-    |
-    +-- No  --> View-only (unregistered device)
-```
-
----
-
-## Summary Table
-
-| Aspect | Behavior |
-|--------|----------|
-| Token validation | Server-side on every request |
-| Role source | Token claims |
-| Expiry | Access token short; refresh token long |
-| Unregistered device | View-only even with valid User/Admin token |
-| Registered device | Full access per role |
-
----
+- If `JWT_SECRET` is unset, a random secret is generated at startup; all existing JWTs become invalid after restart.
+- Keep `JWT_EXPIRES_IN` aligned with session row expiry policy to avoid drift.
 
 ## Related Documentation
 
-- [Roles and Permissions](ROLES_AND_PERMISSIONS.md) — Role definitions and permissions
-- [Commissioning Codes](COMMISSIONING_CODES.md) — Credential reset
-- [API](../api/) — Auth endpoints: login, logout, refresh
+- [Roles and Permissions](ROLES_AND_PERMISSIONS.md)
+- [Commissioning Codes](COMMISSIONING_CODES.md)
+- [API](../api/) — login/logout/current-user endpoints
