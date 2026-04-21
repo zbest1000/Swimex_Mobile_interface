@@ -237,17 +237,47 @@ export function importConfig(
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
         const wifiData = { ...data.wifiConfig };
+        let canImportWifi = true;
         if (wifiData.password_encrypted && !wifiData.password) {
           const decrypted = decrypt(wifiData.password_encrypted as string);
           if (decrypted) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            canImportWifi = false;
           }
           delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+
+        // Never overwrite WiFi config with a payload that lacks a usable password.
+        // Importing password-less config would silently fall back to default password.
+        if (!wifiData.password || typeof wifiData.password !== 'string') {
+          const existingWifiRow = db.prepare("SELECT value FROM system_config WHERE key = 'wifi_ap_config'").get() as { value: string } | undefined;
+          if (existingWifiRow) {
+            try {
+              const existingWifi = JSON.parse(existingWifiRow.value) as Record<string, unknown>;
+              if (typeof existingWifi.password === 'string' && existingWifi.password.length > 0) {
+                wifiData.password = existingWifi.password;
+              } else {
+                errors.push('wifiConfig: missing WiFi password in import payload');
+                canImportWifi = false;
+              }
+            } catch {
+              errors.push('wifiConfig: missing WiFi password in import payload');
+              canImportWifi = false;
+            }
+          } else {
+            errors.push('wifiConfig: missing WiFi password in import payload');
+            canImportWifi = false;
+          }
+        }
+
+        if (canImportWifi) {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        } else {
+          skipped.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
