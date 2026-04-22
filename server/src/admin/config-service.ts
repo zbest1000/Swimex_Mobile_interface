@@ -239,11 +239,10 @@ export function importConfig(
         const wifiData = { ...data.wifiConfig };
         if (wifiData.password_encrypted && !wifiData.password) {
           const decrypted = decrypt(wifiData.password_encrypted as string);
-          if (decrypted) {
-            wifiData.password = decrypted;
-          } else {
-            errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+          if (!decrypted) {
+            throw new ValidationError('could not decrypt WiFi password (different server key?)');
           }
+          wifiData.password = decrypted;
           delete wifiData.password_encrypted;
         }
         db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
