@@ -237,12 +237,17 @@ export function importConfig(
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
         const wifiData = { ...data.wifiConfig };
-        if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
-          if (decrypted) {
-            wifiData.password = decrypted;
-          } else {
-            errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+        if (wifiData.password_encrypted) {
+          if (!wifiData.password) {
+            const decrypted = decrypt(wifiData.password_encrypted as string);
+            if (decrypted !== null) {
+              wifiData.password = decrypted;
+            } else {
+              // Fail closed: never overwrite stored WiFi credentials with an undecryptable payload.
+              errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+              skipped.push('wifiConfig');
+              return;
+            }
           }
           delete wifiData.password_encrypted;
         }
