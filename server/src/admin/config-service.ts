@@ -236,18 +236,29 @@ export function importConfig(
 
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
-        const wifiData = { ...data.wifiConfig };
-        if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
-          if (decrypted) {
+        const wifiData = { ...(data.wifiConfig as Record<string, unknown>) };
+        const encryptedPassword = typeof wifiData.password_encrypted === 'string'
+          ? wifiData.password_encrypted
+          : undefined;
+        const hasPlainPassword = typeof wifiData.password === 'string' && wifiData.password.length > 0;
+        let skipWifiImport = false;
+
+        if (encryptedPassword && !hasPlainPassword) {
+          const decrypted = decrypt(encryptedPassword);
+          if (decrypted !== null) {
             wifiData.password = decrypted;
           } else {
             errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
+            skipped.push('wifiConfig');
+            skipWifiImport = true;
           }
-          delete wifiData.password_encrypted;
         }
-        db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
-        imported.push('wifiConfig');
+        delete wifiData.password_encrypted;
+
+        if (!skipWifiImport) {
+          db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
+          imported.push('wifiConfig');
+        }
       } catch (err: any) {
         errors.push(`wifiConfig: ${err.message}`);
       }
