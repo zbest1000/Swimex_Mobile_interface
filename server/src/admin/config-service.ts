@@ -6,6 +6,38 @@ import { encrypt, decrypt } from '../utils/crypto';
 
 const log = createLogger('config-service');
 
+function normalizeImportedWifiConfig(wifiConfig: Record<string, unknown>): Record<string, unknown> {
+  const wifiData = { ...wifiConfig };
+  const encryptedPassword = wifiData.password_encrypted;
+  const hasPlainPassword = Object.prototype.hasOwnProperty.call(wifiData, 'password');
+
+  if (encryptedPassword !== undefined && !hasPlainPassword) {
+    if (typeof encryptedPassword !== 'string') {
+      throw new ValidationError('encrypted WiFi password must be a string');
+    }
+
+    const decrypted = decrypt(encryptedPassword);
+    if (!decrypted) {
+      throw new ValidationError('could not decrypt WiFi password (different server key?)');
+    }
+
+    wifiData.password = decrypted;
+  }
+
+  delete wifiData.password_encrypted;
+
+  if (wifiData.password !== undefined) {
+    if (typeof wifiData.password !== 'string') {
+      throw new ValidationError('WiFi password must be a string');
+    }
+    if (wifiData.password.length < 8 || wifiData.password.length > 63) {
+      throw new ValidationError('WiFi password must be 8-63 characters');
+    }
+  }
+
+  return wifiData;
+}
+
 export interface ServerConfigExport {
   version: string;
   exportedAt: string;
@@ -236,16 +268,7 @@ export function importConfig(
 
     if (shouldImport('wifiConfig') && data.wifiConfig) {
       try {
-        const wifiData = { ...data.wifiConfig };
-        if (wifiData.password_encrypted && !wifiData.password) {
-          const decrypted = decrypt(wifiData.password_encrypted as string);
-          if (decrypted) {
-            wifiData.password = decrypted;
-          } else {
-            errors.push('wifiConfig: could not decrypt WiFi password (different server key?)');
-          }
-          delete wifiData.password_encrypted;
-        }
+        const wifiData = normalizeImportedWifiConfig(data.wifiConfig);
         db.prepare("INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('wifi_ap_config', ?, datetime('now'))").run(JSON.stringify(wifiData));
         imported.push('wifiConfig');
       } catch (err: any) {
